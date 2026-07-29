@@ -1,44 +1,58 @@
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.conversation import Conversation
 from app.models.message import Message
 
 
-def create_conversation(db: Session, conversation: Conversation):
-    db.add(conversation)
-    db.commit()
-    db.refresh(conversation)
-    return conversation
+class ChatRepository:
+    def __init__(self, db: Session):
+        self.db = db
 
+    def create_conversation(self, user_id: int, title: str) -> Conversation:
+        conversation = Conversation(
+            user_id=user_id,
+            title=title,
+        )
+        self.db.add(conversation)
+        self.db.commit()
+        self.db.refresh(conversation)
+        return conversation
 
-def get_user_conversations(db: Session, user_id: int):
-    return (
-        db.query(Conversation)
-        .filter(Conversation.user_id == user_id)
-        .order_by(Conversation.created_at.desc())
-        .all()
-    )
+    def get_conversations(self, user_id: int):
+        return (
+            self.db.execute(
+                select(Conversation)
+                .where(Conversation.user_id == user_id)
+                .order_by(Conversation.updated_at.desc())
+            )
+            .scalars()
+            .all()
+        )
 
+    def get_conversation(self, conversation_id: int, user_id: int):
+        return (
+            self.db.execute(
+                select(Conversation).where(
+                    Conversation.id == conversation_id,
+                    Conversation.user_id == user_id,
+                )
+            )
+            .scalar_one_or_none()
+        )
 
-def get_conversation(db: Session, conversation_id: int):
-    return (
-        db.query(Conversation)
-        .filter(Conversation.id == conversation_id)
-        .first()
-    )
-
-
-def create_message(db: Session, message: Message):
-    db.add(message)
-    db.commit()
-    db.refresh(message)
-    return message
-
-
-def get_messages(db: Session, conversation_id: int):
-    return (
-        db.query(Message)
-        .filter(Message.conversation_id == conversation_id)
-        .order_by(Message.created_at.asc())
-        .all()
-    )
+    def create_message(
+        self,
+        conversation_id: int,
+        role: str,
+        content: str,
+    ) -> Message:
+        message = Message(
+            conversation_id=conversation_id,
+            role=role,
+            content=content,
+        )
+        self.db.add(message)
+        self.db.commit()
+        self.db.refresh(message)
+        return message

@@ -1,9 +1,10 @@
-from pydantic import BaseModel
 from datetime import datetime
+
+from pydantic import BaseModel
 
 
 class ConversationCreate(BaseModel):
-    title: str
+    title: str | None = "New Chat"
 
 
 class ConversationResponse(BaseModel):
@@ -12,7 +13,7 @@ class ConversationResponse(BaseModel):
     created_at: datetime
 
     model_config = {
-        "from_attributes": True
+        "from_attributes": True,
     }
 
 
@@ -27,5 +28,5 @@ class MessageResponse(BaseModel):
     created_at: datetime
 
     model_config = {
-        "from_attributes": True
+        "from_attributes": True,
     }
