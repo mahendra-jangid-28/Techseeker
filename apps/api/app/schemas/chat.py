@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class ConversationCreate(BaseModel):
@@ -41,3 +41,13 @@ class ConversationDetailResponse(BaseModel):
     model_config = {
         "from_attributes": True,
     }
+
+class MessageCreate(BaseModel):
+    content: str
+
+
+class ChatResponse(BaseModel):
+    user_message: MessageResponse
+    assistant_message: MessageResponse
+
+    model_config = ConfigDict(from_attributes=True)
