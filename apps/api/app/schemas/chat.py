@@ -30,3 +30,14 @@ class MessageResponse(BaseModel):
     model_config = {
         "from_attributes": True,
     }
+
+
+class ConversationDetailResponse(BaseModel):
+    id: int
+    title: str
+    created_at: datetime
+    messages: list[MessageResponse]
+
+    model_config = {
+        "from_attributes": True,
+    }
