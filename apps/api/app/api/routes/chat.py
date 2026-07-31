@@ -5,9 +5,11 @@ from app.db.dependencies import get_db
 from app.dependencies.auth import get_current_user
 from app.models.user import User
 from app.schemas.chat import (
+    ChatResponse,
     ConversationCreate,
     ConversationDetailResponse,
     ConversationResponse,
+    MessageCreate,
 )
 from app.services import chat_service
 
@@ -24,30 +26,34 @@ def test_chat():
     }
 
 
-@router.post("/conversations", response_model=ConversationResponse)
+@router.post(
+    "/conversations",
+    response_model=ConversationResponse,
+)
 def create_conversation(
     data: ConversationCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ConversationResponse:
-    conversation = chat_service.create_conversation(
+    return chat_service.create_conversation(
         db=db,
         user=current_user,
         data=data,
     )
-    return conversation
 
 
-@router.get("/conversations", response_model=list[ConversationResponse])
+@router.get(
+    "/conversations",
+    response_model=list[ConversationResponse],
+)
 def get_conversations(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[ConversationResponse]:
-    conversations = chat_service.get_conversations(
+    return chat_service.get_conversations(
         db=db,
         user=current_user,
     )
-    return conversations
 
 
 @router.get(
@@ -59,9 +65,26 @@ def get_conversation_detail(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ConversationDetailResponse:
-    conversation = chat_service.get_conversation_detail(
+    return chat_service.get_conversation_detail(
         db=db,
         user=current_user,
         conversation_id=conversation_id,
     )
-    return conversation
+
+
+@router.post(
+    "/conversations/{conversation_id}/messages",
+    response_model=ChatResponse,
+)
+def send_message(
+    conversation_id: int,
+    data: MessageCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ChatResponse:
+    return chat_service.send_message(
+        db=db,
+        user=current_user,
+        conversation_id=conversation_id,
+        data=data,
+    )
