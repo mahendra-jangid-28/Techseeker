@@ -1,0 +1,14 @@
+node_modules
+.pnpm-store
+.next
+out
+dist
+coverage
+.env
+.env.local
+.env.*.local
+.pytest_cache
+__pycache__/
+.venv
+*.log
+.DS_Store
