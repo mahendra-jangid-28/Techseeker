@@ -6,7 +6,7 @@ from app.models.user import User
 from app.providers.gemini_provider import GeminiProvider
 from app.repositories.chat_repository import ChatRepository
 from app.schemas.chat import ConversationCreate, MessageCreate
-
+from app.services.title_service import generate_title
 
 def generate_ai_response(message: str) -> str:
     try:
@@ -88,6 +88,15 @@ def send_message(
         role="user",
         content=data.content,
     )
+    messages = repository.get_messages(conversation.id)
+
+    if len(messages) == 1 and conversation.title == "New Chat":
+        title = generate_title(data.content)
+
+        repository.update_conversation_title(
+            conversation=conversation,
+            title=title,
+        )
 
     ai_text = generate_ai_response(data.content)
 

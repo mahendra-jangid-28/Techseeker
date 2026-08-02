@@ -82,3 +82,15 @@ class ChatRepository:
             .order_by(Message.created_at.asc())
             .all()
         )
+
+    def update_conversation_title(
+        self,
+        conversation: Conversation,
+        title: str,
+    ) -> Conversation:
+        conversation.title = title
+
+        self.db.commit()
+        self.db.refresh(conversation)
+
+        return conversation
