@@ -33,7 +33,13 @@ const navigation = [
   },
 ];
 
-export const AppShell = ({ children }: { children: ReactNode }) => {
+export const AppShell = ({
+  children,
+  pathname,
+}: {
+  children: ReactNode;
+  pathname: string;
+}) => {
   return (
     <div className="relative flex min-h-screen overflow-hidden bg-[#030712] text-slate-50">
       {/* Ambient background */}
@@ -71,8 +77,11 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
           </p>
 
           <div className="space-y-1.5">
-            {navigation.map((item, index) => {
-              const active = index === 0;
+            {navigation.map((item) => {
+              const active =
+                item.href === '/'
+                  ? pathname === '/'
+                  : pathname.startsWith(item.href);
 
               return (
                 <a
