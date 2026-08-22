@@ -1,18 +1,16 @@
 'use client';
 
-import { FormEvent, KeyboardEvent, useState } from 'react';
-
-type Message = {
-  id: number;
-  role: 'user' | 'assistant';
-  content: string;
-};
-
-type Conversation = {
-  id: number;
-  title: string;
-  messages: Message[];
-};
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import type { Route } from 'next';
+import { clearToken, getToken } from '../../lib/api/auth';
+import {
+  createConversation,
+  getConversationDetail,
+  getConversations,
+  sendMessage as sendChatMessage,
+} from '../../lib/api/chat';
+import type { Conversation, Message } from '../../lib/types/chat';
 
 const suggestions = [
   'Explain this concept simply',
@@ -21,117 +19,198 @@ const suggestions = [
   'Quiz me on a topic',
 ];
 
-const welcomeMessage: Message = {
-  id: 1,
-  role: 'assistant',
-  content:
-    "Hey! I'm your TechSeeker AI Mentor. Tell me what you are learning, building, or struggling with, and we'll work through it together.",
-};
+function isAuthError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
 
-const initialConversations: Conversation[] = [
-  {
-    id: 1,
-    title: 'New conversation',
-    messages: [welcomeMessage],
-  },
-  {
-    id: 2,
-    title: 'Understanding React hooks',
-    messages: [
-      {
-        id: 2,
-        role: 'user',
-        content: 'Can you explain React hooks simply?',
-      },
-      {
-        id: 3,
-        role: 'assistant',
-        content:
-          'React hooks let function components use features like state and lifecycle behavior. For example, useState helps you store and update data inside a component.',
-      },
-    ],
-  },
-  {
-    id: 3,
-    title: 'Python learning roadmap',
-    messages: [
-      {
-        id: 4,
-        role: 'user',
-        content: 'I want to learn Python properly.',
-      },
-      {
-        id: 5,
-        role: 'assistant',
-        content:
-          'Start with Python fundamentals, then functions, OOP, file handling, APIs, databases, and finally build projects based on your goals.',
-      },
-    ],
-  },
-  {
-    id: 4,
-    title: 'Debugging my API',
-    messages: [
-      {
-        id: 6,
-        role: 'user',
-        content: 'My API is returning an error. How should I debug it?',
-      },
-      {
-        id: 7,
-        role: 'assistant',
-        content:
-          'Start by checking the server logs, request payload, response status code, environment variables, and database connection. Then isolate the failing layer step by step.',
-      },
-    ],
-  },
-];
+  const message = error.message.toLowerCase();
+
+  return (
+    message.includes('credentials') ||
+    message.includes('unauthorized') ||
+    message.includes('not authenticated')
+  );
+}
 
 export default function MentorPage() {
+  const router = useRouter();
   const [message, setMessage] = useState('');
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<
+    number | null
+  >(null);
+  const [loadingConversations, setLoadingConversations] = useState(true);
+  const [creatingConversation, setCreatingConversation] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const activeConversationIdRef = useRef<number | null>(null);
 
-  const [conversations, setConversations] =
-    useState<Conversation[]>(initialConversations);
+  useEffect(() => {
+    const token = getToken();
 
-  const [activeConversationId, setActiveConversationId] = useState(1);
+    if (!token) {
+      router.replace('/login' as Route);
+      return;
+    }
 
-  const activeConversation = conversations.find(
-    (conversation) => conversation.id === activeConversationId
-  );
+    const authToken = token;
 
-  const messages = activeConversation?.messages ?? [];
+    async function loadConversations() {
+      try {
+        const data = await getConversations(authToken);
 
-  function sendMessage() {
-    const trimmedMessage = message.trim();
+        setConversations(data);
 
-    if (!trimmedMessage) return;
-
-    const userMessage: Message = {
-      id: Date.now(),
-      role: 'user',
-      content: trimmedMessage,
-    };
-
-    setConversations((currentConversations) =>
-      currentConversations.map((conversation) => {
-        if (conversation.id !== activeConversationId) {
-          return conversation;
+        if (data.length > 0) {
+          setActiveConversationId(data[0].id);
+        }
+      } catch (error) {
+        if (isAuthError(error)) {
+          clearToken();
+          router.replace('/login' as Route);
+          return;
         }
 
-        const shouldUpdateTitle =
-          conversation.title === 'New conversation';
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : 'Failed to load conversations',
+        );
+      } finally {
+        setLoadingConversations(false);
+      }
+    }
 
-        return {
-          ...conversation,
-          title: shouldUpdateTitle
-            ? trimmedMessage.slice(0, 32)
-            : conversation.title,
-          messages: [...conversation.messages, userMessage],
-        };
-      })
-    );
+    loadConversations();
+  }, [router]);
 
-    setMessage('');
+  useEffect(() => {
+    if (activeConversationId === null) {
+      setMessages([]);
+      return;
+    }
+
+    const conversationId = activeConversationId;
+    const token = getToken();
+
+    if (!token) {
+      router.replace('/login' as Route);
+      return;
+    }
+
+    const authToken = token;
+
+    let cancelled = false;
+
+    async function loadConversationDetail() {
+      setLoadingMessages(true);
+      setMessages([]);
+      setLoadError(null);
+
+      try {
+        const detail = await getConversationDetail(authToken, conversationId);
+
+        if (cancelled) return;
+
+        setMessages(detail.messages);
+      } catch (error) {
+        if (cancelled) return;
+
+        if (isAuthError(error)) {
+          clearToken();
+          router.replace('/login' as Route);
+          return;
+        }
+
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : 'Failed to load conversation',
+        );
+      } finally {
+        if (!cancelled) {
+          setLoadingMessages(false);
+        }
+      }
+    }
+
+    loadConversationDetail();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeConversationId, router]);
+
+  useEffect(() => {
+    activeConversationIdRef.current = activeConversationId;
+  }, [activeConversationId]);
+
+  async function sendMessage() {
+    const trimmedMessage = message.trim();
+
+    if (
+      !trimmedMessage ||
+      activeConversationId === null ||
+      sendingMessage ||
+      loadingMessages
+    ) {
+      return;
+    }
+
+    const token = getToken();
+
+    if (!token) {
+      router.replace('/login' as Route);
+      return;
+    }
+
+    const conversationId = activeConversationId;
+    const wasNewChat =
+      conversations.find((conversation) => conversation.id === conversationId)
+        ?.title === 'New Chat';
+
+    setSendingMessage(true);
+    setLoadError(null);
+
+    try {
+      const response = await sendChatMessage(
+        token,
+        conversationId,
+        trimmedMessage,
+      );
+
+      if (activeConversationIdRef.current !== conversationId) {
+        return;
+      }
+
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        response.user_message,
+        response.assistant_message,
+      ]);
+      setMessage('');
+
+      if (wasNewChat) {
+        const updatedConversations = await getConversations(token);
+
+        if (activeConversationIdRef.current === conversationId) {
+          setConversations(updatedConversations);
+        }
+      }
+    } catch (error) {
+      if (isAuthError(error)) {
+        clearToken();
+        router.replace('/login' as Route);
+        return;
+      }
+
+      setLoadError(
+        error instanceof Error ? error.message : 'Failed to send message',
+      );
+    } finally {
+      setSendingMessage(false);
+    }
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -142,7 +221,9 @@ export default function MentorPage() {
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      sendMessage();
+      if (!sendingMessage) {
+        sendMessage();
+      }
     }
   }
 
@@ -150,32 +231,48 @@ export default function MentorPage() {
     setMessage(suggestion);
   }
 
-  function startNewConversation() {
-    const conversationId = Date.now();
+  async function startNewConversation() {
+    if (creatingConversation) return;
 
-    const newConversation: Conversation = {
-      id: conversationId,
-      title: 'New conversation',
-      messages: [
-        {
-          id: conversationId + 1,
-          role: 'assistant',
-          content:
-            "Hey! I'm your TechSeeker AI Mentor. What would you like to learn or build?",
-        },
-      ],
-    };
+    const token = getToken();
 
-    setConversations((currentConversations) => [
-      newConversation,
-      ...currentConversations,
-    ]);
+    if (!token) {
+      router.replace('/login' as Route);
+      return;
+    }
 
-    setActiveConversationId(newConversation.id);
-    setMessage('');
+    setCreatingConversation(true);
+    setLoadError(null);
+
+    try {
+      const newConversation = await createConversation(token);
+
+      setConversations((currentConversations) => [
+        newConversation,
+        ...currentConversations,
+      ]);
+      setActiveConversationId(newConversation.id);
+      setMessage('');
+    } catch (error) {
+      if (isAuthError(error)) {
+        clearToken();
+        router.replace('/login' as Route);
+        return;
+      }
+
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to create conversation',
+      );
+    } finally {
+      setCreatingConversation(false);
+    }
   }
 
   function selectConversation(conversationId: number) {
+    if (conversationId === activeConversationId) return;
+
     setActiveConversationId(conversationId);
     setMessage('');
   }
@@ -213,13 +310,14 @@ export default function MentorPage() {
           <button
             type="button"
             onClick={startNewConversation}
-            className="flex items-center gap-3 rounded-xl border border-sky-400/20 bg-sky-400/[0.06] px-4 py-3 text-left text-xs font-medium text-sky-300 transition hover:border-sky-400/30 hover:bg-sky-400/[0.1]"
+            disabled={creatingConversation}
+            className="flex items-center gap-3 rounded-xl border border-sky-400/20 bg-sky-400/[0.06] px-4 py-3 text-left text-xs font-medium text-sky-300 transition hover:border-sky-400/30 hover:bg-sky-400/[0.1] disabled:cursor-not-allowed disabled:opacity-60"
           >
             <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-sky-400/10 text-base">
               +
             </span>
 
-            New chat
+            {creatingConversation ? 'Creating...' : 'New chat'}
           </button>
 
           <div className="mt-8">
@@ -228,7 +326,12 @@ export default function MentorPage() {
             </p>
 
             <div className="mt-3 flex flex-col gap-1">
-              {conversations.map((conversation) => {
+              {loadingConversations ? (
+                <p className="px-3 py-2 text-xs text-slate-500">
+                  Loading conversations...
+                </p>
+              ) : (
+                conversations.map((conversation) => {
                 const isActive =
                   conversation.id === activeConversationId;
 
@@ -258,7 +361,8 @@ export default function MentorPage() {
                     </span>
                   </button>
                 );
-              })}
+              })
+              )}
             </div>
           </div>
 
@@ -306,9 +410,10 @@ export default function MentorPage() {
             <button
               type="button"
               onClick={startNewConversation}
-              className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2 text-xs font-medium text-slate-400 transition hover:border-white/[0.12] hover:bg-white/[0.06] hover:text-slate-200 lg:hidden"
+              disabled={creatingConversation}
+              className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2 text-xs font-medium text-slate-400 transition hover:border-white/[0.12] hover:bg-white/[0.06] hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60 lg:hidden"
             >
-              New chat
+              {creatingConversation ? 'Creating...' : 'New chat'}
             </button>
           </header>
 
@@ -316,8 +421,20 @@ export default function MentorPage() {
           <section className="flex min-h-0 flex-1 flex-col">
             <div className="flex-1 overflow-y-auto py-8">
               <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
+                {loadError && (
+                  <p className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-300">
+                    {loadError}
+                  </p>
+                )}
+
+                {loadingMessages ? (
+                  <p className="py-6 text-center text-sm text-slate-500">
+                    Loading messages...
+                  </p>
+                ) : (
+                  <>
                 {/* Welcome */}
-                {messages.length === 1 && (
+                {messages.length === 0 && (
                   <div className="py-6 text-center">
                     <div className="relative mx-auto mb-6 h-20 w-20">
                       <div className="absolute inset-0 animate-pulse rounded-full bg-sky-400/10 blur-2xl" />
@@ -347,7 +464,7 @@ export default function MentorPage() {
                 )}
 
                 {/* Suggestions */}
-                {messages.length === 1 && (
+                {messages.length === 0 && (
                   <div className="mx-auto mb-4 grid w-full max-w-2xl gap-2 sm:grid-cols-2">
                     {suggestions.map((suggestion) => (
                       <button
@@ -407,6 +524,12 @@ export default function MentorPage() {
                     </div>
                   ))}
                 </div>
+
+                {sendingMessage && (
+                  <p className="pb-2 text-sm text-slate-500">Thinking...</p>
+                )}
+                  </>
+                )}
               </div>
             </div>
 
@@ -432,7 +555,8 @@ export default function MentorPage() {
                       onKeyDown={handleKeyDown}
                       placeholder="Ask your AI mentor anything..."
                       rows={1}
-                      className="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-sm text-slate-100 outline-none placeholder:text-slate-600"
+                      disabled={sendingMessage}
+                      className="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-sm text-slate-100 outline-none placeholder:text-slate-600 disabled:opacity-60"
                     />
 
                     <button
@@ -445,11 +569,11 @@ export default function MentorPage() {
 
                     <button
                       type="submit"
-                      disabled={!message.trim()}
+                      disabled={!message.trim() || sendingMessage || loadingMessages}
                       className="mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 to-cyan-400 px-3 text-xs font-bold text-slate-950 shadow-lg shadow-sky-500/20 transition hover:scale-105 hover:shadow-sky-500/30 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:scale-100"
                       aria-label="Send message"
                     >
-                      Send
+                      {sendingMessage ? '...' : 'Send'}
                     </button>
                   </div>
 
