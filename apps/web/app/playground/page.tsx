@@ -1,23 +1,65 @@
-'use client';
+﻿'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import Editor from '@monaco-editor/react';
 
-const starterCode = `function greet(name: string) {
+const starterCodes: Record<string, string> = {
+  javascript: `function greet(name) {
   return \`Hello, \${name}! Welcome to TechSeeker.\`;
 }
 
 const user = 'Developer';
 
-console.log(greet(user));`;
+console.log(greet(user));`,
+  python: `def greet(name):
+    return f"Hello, {name}! Welcome to TechSeeker."
+
+user = "Developer"
+print(greet(user))`,
+  cpp: `#include <iostream>
+#include <string>
+
+std::string greet(const std::string &name) {
+  return "Hello, " + name + "! Welcome to TechSeeker.";
+}
+
+int main() {
+  std::string user = "Developer";
+  std::cout << greet(user) << std::endl;
+  return 0;
+}`,
+};
 
 export default function PlaygroundPage() {
-  const [code, setCode] = useState(starterCode);
-  const [output, setOutput] = useState(
-    'Hello, Developer! Welcome to TechSeeker.'
-  );
+  const [language, setLanguage] = useState<'javascript' | 'python' | 'cpp'>('python');
+  const [code, setCode] = useState(() => starterCodes.python);
+  const [output, setOutput] = useState('Waiting for output...');
+  const storageKeyRef = useRef('playground:code:python');
+
+  useEffect(() => {
+    const key = `playground:code:${language}`;
+    storageKeyRef.current = key;
+    const saved = typeof window !== 'undefined' ? localStorage.getItem(key) : null;
+    if (saved) setCode(saved);
+    else setCode(starterCodes[language]);
+  }, [language]);
+
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') localStorage.setItem(storageKeyRef.current, code);
+    } catch (e) {
+      // ignore
+    }
+  }, [code]);
 
   const runCode = () => {
     setOutput('Code execution will be connected to the secure runtime.');
+  };
+
+  const resetCode = () => {
+    const key = storageKeyRef.current;
+    try { localStorage.removeItem(key); } catch(e) {}
+    setCode(starterCodes[language]);
   };
 
   return (
@@ -54,8 +96,19 @@ export default function PlaygroundPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value as any)}
+              className="rounded-xl bg-white/[0.03] px-3 py-2 text-xs text-slate-200"
+            >
+              <option value="python">Python</option>
+              <option value="cpp">C++</option>
+              <option value="javascript">JavaScript</option>
+            </select>
+
             <button
               type="button"
+              onClick={resetCode}
               className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2 text-xs font-medium text-slate-400 transition hover:bg-white/[0.06] hover:text-slate-200"
             >
               Reset
@@ -64,15 +117,17 @@ export default function PlaygroundPage() {
             <button
               type="button"
               onClick={runCode}
-              className="rounded-xl bg-gradient-to-r from-violet-400 to-fuchsia-400 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-violet-500/20 transition hover:scale-[1.02] hover:shadow-violet-500/30"
+              disabled
+              title="Run is not yet connected"
+              className="rounded-xl bg-gradient-to-r from-violet-400 to-fuchsia-400 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-violet-500/20 opacity-60"
             >
-              ▶ Run code
+              ▶ Run
             </button>
           </div>
         </header>
 
         {/* Workspace */}
-        <section className="grid min-h-[calc(100vh-120px)] gap-4 py-5 lg:grid-cols-[1.6fr_1fr]">
+        <section className="grid min-h-[calc(100vh-120px)] gap-4 py-5 lg:grid-cols-[7fr_3fr]">
           {/* Editor */}
           <div className="flex min-h-[550px] flex-col overflow-hidden rounded-2xl border border-white/[0.07] bg-slate-950/70 shadow-2xl shadow-black/20 backdrop-blur-xl">
             <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
@@ -84,21 +139,30 @@ export default function PlaygroundPage() {
                 </div>
 
                 <span className="text-xs font-medium text-slate-400">
-                  main.ts
+                  main.{language === 'javascript' ? 'js' : language === 'python' ? 'py' : 'cpp'}
                 </span>
               </div>
 
               <span className="text-[10px] uppercase tracking-wider text-slate-600">
-                TypeScript
+                {language === 'javascript' ? 'JavaScript' : language === 'python' ? 'Python' : 'C++'}
               </span>
             </div>
 
-            <textarea
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-              spellCheck={false}
-              className="min-h-[500px] flex-1 resize-none bg-transparent p-5 font-mono text-sm leading-7 text-slate-300 outline-none placeholder:text-slate-700"
-            />
+            <div className="min-h-[500px] flex-1">
+              <Editor
+                height="100%"
+                defaultLanguage={language}
+                language={language}
+                value={code}
+                onChange={(v) => typeof v === 'string' && setCode(v)}
+                theme="vs-dark"
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 13,
+                  automaticLayout: true,
+                }}
+              />
+            </div>
           </div>
 
           {/* Side panel */}
