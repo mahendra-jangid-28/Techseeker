@@ -16,5 +16,22 @@ services:
     ports:
       - "6379:6379"
 
+  code-runner:
+    build:
+      context: ./apps/runner
+      dockerfile: Dockerfile
+    expose:
+      - "8001"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 100
+    mem_limit: 512m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:rw,size=128m
+    restart: unless-stopped
+
 volumes:
   postgres_data:
