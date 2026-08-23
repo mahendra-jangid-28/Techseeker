@@ -11,7 +11,7 @@ def create_user(db: Session, user: User):
     db.add(user)
     db.commit()
     db.refresh(user)
-    return 
+    return user
 
 def authenticate_user(db: Session, email: str, password: str):
     user = get_user_by_email(db, email)

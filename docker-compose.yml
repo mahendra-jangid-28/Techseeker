@@ -10,11 +10,15 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - default
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    networks:
+      - default
 
   code-runner:
     build:
@@ -30,8 +34,27 @@ services:
     mem_limit: 512m
     cpus: 1.0
     tmpfs:
-      - /tmp:rw,size=128m
+      - /tmp:rw,exec,size=128m
     restart: unless-stopped
+    networks:
+      - runner_isolated
+
+  code-runner-proxy:
+    image: alpine/socat
+    ports:
+      - "127.0.0.1:8001:8001"
+    command: tcp-listen:8001,fork,reuseaddr tcp-connect:code-runner:8001
+    restart: unless-stopped
+    depends_on:
+      - code-runner
+    networks:
+      - default
+      - runner_isolated
+
+networks:
+  default:
+  runner_isolated:
+    internal: true
 
 volumes:
   postgres_data:

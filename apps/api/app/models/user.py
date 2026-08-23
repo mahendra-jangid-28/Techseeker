@@ -12,10 +12,15 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     conversations = relationship(
-    "Conversation",
-    back_populates="user",
-    cascade="all, delete-orphan",
-)
+        "Conversation",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    projects = relationship(
+        "Project",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
 
 
