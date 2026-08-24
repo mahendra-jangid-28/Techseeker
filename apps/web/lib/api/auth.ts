@@ -13,9 +13,16 @@ export type RegisterResponse = {
   full_name: string;
 };
 
+export type UserResponse = {
+  id: number;
+  email: string;
+  full_name: string;
+};
+
 export function saveToken(token: string): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem(TOKEN_KEY, token);
+  window.dispatchEvent(new Event('auth-change'));
 }
 
 export function getToken(): string | null {
@@ -26,6 +33,7 @@ export function getToken(): string | null {
 export function clearToken(): void {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(TOKEN_KEY);
+  window.dispatchEvent(new Event('auth-change'));
 }
 
 export function login(email: string, password: string): Promise<AuthTokenResponse> {
@@ -50,5 +58,13 @@ export function register(
       full_name: fullName,
       password,
     },
+  });
+}
+
+export function getCurrentUser(token?: string): Promise<UserResponse> {
+  const authToken = token ?? getToken();
+  return apiRequest<UserResponse>('/users/me', {
+    method: 'GET',
+    token: authToken || undefined,
   });
 }

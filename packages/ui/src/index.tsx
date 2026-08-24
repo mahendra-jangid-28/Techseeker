@@ -33,13 +33,32 @@ const navigation = [
   },
 ];
 
+export interface AppShellUser {
+  id: number;
+  email: string;
+  full_name: string;
+}
+
+export interface AppShellProps {
+  children: ReactNode;
+  pathname: string;
+  user?: AppShellUser | null;
+  onLogout?: () => void;
+}
+
+function getInitials(name: string): string {
+  if (!name) return 'TS';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 export const AppShell = ({
   children,
   pathname,
-}: {
-  children: ReactNode;
-  pathname: string;
-}) => {
+  user,
+  onLogout,
+}: AppShellProps) => {
   return (
     <div className="relative flex min-h-screen overflow-hidden bg-[#030712] text-slate-50">
       {/* Ambient background */}
@@ -142,21 +161,44 @@ export const AppShell = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-3 rounded-xl px-2 py-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-sm font-bold">
-              T
-            </div>
+          {user ? (
+            <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-slate-900/60 p-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-xs font-bold text-white shadow-md">
+                  {getInitials(user.full_name)}
+                </div>
 
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-slate-200">
-                TechSeeker User
-              </p>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium text-slate-100">
+                    {user.full_name}
+                  </p>
+                  <p className="truncate text-[10px] text-slate-400" title={user.email}>
+                    {user.email}
+                  </p>
+                </div>
+              </div>
 
-              <p className="truncate text-[11px] text-slate-500">
-                Free workspace
-              </p>
+              {onLogout && (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  title="Sign out"
+                  className="ml-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.03] text-xs text-slate-400 transition hover:border-red-400/30 hover:bg-red-500/10 hover:text-red-300"
+                  aria-label="Sign out"
+                >
+                  ⎋
+                </button>
+              )}
             </div>
-          </div>
+          ) : (
+            <a
+              href="/login"
+              className="flex items-center justify-center gap-2 rounded-xl border border-sky-400/20 bg-sky-400/10 px-3 py-2.5 text-xs font-semibold text-sky-300 transition hover:bg-sky-400/20"
+            >
+              <span>Sign in</span>
+              <span>→</span>
+            </a>
+          )}
         </div>
       </aside>
 
