@@ -1,852 +1,651 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import type { Route } from 'next';
-import { clearToken, getToken } from '../../lib/api/auth';
+import { Suspense, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import Editor from '@monaco-editor/react';
 import {
-  generateLearningContent,
-  type LearningResponse,
-} from '../../lib/api/learning';
+  getLesson,
+  submitLessonCode,
+  submitLessonQuiz,
+  type LessonDetail,
+  type LessonSubmitResult,
+  type QuizSubmitResult,
+} from '../../lib/api/lessons';
+import {
+  completeModule,
+  getUserRoadmap,
+  type UserRoadmapDetail,
+} from '../../lib/api/roadmap';
+import { getToken } from '../../lib/api/auth';
 
-const popularTopics = [
-  {
-    title: 'Python',
-    description: 'Learn Python from fundamentals to practical programming.',
-    icon: '🐍',
-    level: 'Beginner',
-  },
-  {
-    title: 'JavaScript',
-    description: 'Understand modern JavaScript and web programming.',
-    icon: 'JS',
-    level: 'Beginner',
-  },
-  {
-    title: 'Machine Learning',
-    description: 'Build a strong foundation in ML concepts and algorithms.',
-    icon: 'ML',
-    level: 'Intermediate',
-  },
-  {
-    title: 'APIs',
-    description: 'Understand how applications communicate through APIs.',
-    icon: 'API',
-    level: 'Beginner',
-  },
-  {
-    title: 'Data Structures',
-    description: 'Master arrays, stacks, queues, trees, graphs and more.',
-    icon: 'DS',
-    level: 'Intermediate',
-  },
-  {
-    title: 'SQL',
-    description: 'Learn databases, queries, joins and data manipulation.',
-    icon: 'SQL',
-    level: 'Beginner',
-  },
-];
-
-const learningFramework = [
-  'Why Learn This?',
-  'Professional Definition',
-  'Easy Explanation',
-  'Real-World Analogy',
-  'Real-World Applications',
-  'Examples',
-  'Common Mistakes',
-  'Interactive Practice',
-  'Quiz',
-  'Assignment',
-  'Mini Project',
-];
-
-function isAuthError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-
-  const message = error.message.toLowerCase();
-
-  return (
-    message.includes('credentials') ||
-    message.includes('unauthorized') ||
-    message.includes('not authenticated') ||
-    message.includes('401')
-  );
-}
-
-export default function LearnPage() {
+function LearnContent() {
   const router = useRouter();
-  const [topic, setTopic] = useState('');
-  const [lessonData, setLessonData] = useState<LearningResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const searchParams = useSearchParams();
+
+  const [lesson, setLesson] = useState<LessonDetail | null>(null);
+  const [userRoadmap, setUserRoadmap] = useState<UserRoadmapDetail | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [quizAnswers, setQuizAnswers] = useState<Record<number, string>>({});
-  const [revealedHints, setRevealedHints] = useState<Record<number, boolean>>({});
+
+  // Code Editor & Execution states
+  const [code, setCode] = useState<string>('');
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [execResult, setExecResult] = useState<LessonSubmitResult | null>(null);
+
+  // Progressive Hint Ladder state: 0 = none, 1 = hint1, 2 = hint2, 3 = hint3, 4 = solution
+  const [revealedHintLevel, setRevealedHintLevel] = useState<number>(0);
+
+  // Quiz states
+  const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
+  const [isSubmittingQuiz, setIsSubmittingQuiz] = useState(false);
+  const [quizResult, setQuizResult] = useState<QuizSubmitResult | null>(null);
+
+  // Completion modal state
+  const [isCompleting, setIsCompleting] = useState(false);
+  const [showXpModal, setShowXpModal] = useState(false);
+  const [nextModuleId, setNextModuleId] = useState<number | null>(null);
 
   useEffect(() => {
     const token = getToken();
     if (!token) {
-      router.replace('/login' as Route);
-    }
-  }, [router]);
-
-  async function handleGenerateTopic(targetTopic: string) {
-    const trimmed = targetTopic.trim();
-    if (!trimmed || isLoading) return;
-
-    const token = getToken();
-    if (!token) {
-      router.replace('/login' as Route);
+      router.push('/login');
       return;
     }
 
-    setIsLoading(true);
-    setError(null);
-    setQuizAnswers({});
-    setRevealedHints({});
+    async function loadData() {
+      try {
+        const roadmapData = await getUserRoadmap(token || undefined);
+        setUserRoadmap(roadmapData);
 
-    try {
-      const response = await generateLearningContent(
-        {
-          topic: trimmed,
-          language: 'English',
-          level: 'beginner',
-        },
-        token,
-      );
+        const paramModuleId = searchParams.get('module_id');
+        let targetModuleId: number | null = paramModuleId ? parseInt(paramModuleId, 10) : null;
 
-      setLessonData(response);
-      setTopic(response.topic);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (err: unknown) {
-      if (isAuthError(err)) {
-        clearToken();
-        router.replace('/login' as Route);
-        return;
+        if (!targetModuleId && roadmapData?.modules?.length) {
+          // Find first unlocked or in-progress module
+          const currentUnlocked = roadmapData.modules.find((m) => m.status === 'unlocked');
+          targetModuleId = currentUnlocked ? currentUnlocked.id : roadmapData.modules[0].id;
+        }
+
+        // Fallback default module ID 1 if not assigned yet
+        const finalModuleId = targetModuleId || 1;
+        const lessonData = await getLesson(finalModuleId, token || undefined);
+
+        setLesson(lessonData);
+        setCode(lessonData.content.interactive_practice.starter_code);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load lesson curriculum');
+      } finally {
+        setLoading(false);
       }
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Failed to generate learning content. Please try again.',
-      );
-    } finally {
-      setIsLoading(false);
     }
-  }
 
-  function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (topic.trim()) {
-      handleGenerateTopic(topic);
-    }
-  }
+    loadData();
+  }, [router, searchParams]);
 
-  function handleTopicSelect(value: string) {
-    setTopic(value);
-    handleGenerateTopic(value);
-  }
-
-  function handleResetToDiscovery() {
-    setLessonData(null);
+  async function handleRunCode() {
+    if (!lesson) return;
+    setIsExecuting(true);
     setError(null);
-    setQuizAnswers({});
-    setRevealedHints({});
+    try {
+      const result = await submitLessonCode(
+        lesson.id,
+        code,
+        lesson.content.interactive_practice.language || 'python',
+      );
+      setExecResult(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Code execution failed');
+    } finally {
+      setIsExecuting(false);
+    }
   }
 
-  function toggleHint(index: number) {
-    setRevealedHints((prev) => ({
-      ...prev,
-      [index]: !prev[index],
-    }));
+  function unlockNextHint() {
+    setRevealedHintLevel((prev) => Math.min(4, prev + 1));
   }
 
-  function handleSelectQuizOption(questionIndex: number, selectedOption: string) {
+  function handleSelectQuizOption(questionId: number, option: string) {
     setQuizAnswers((prev) => ({
       ...prev,
-      [questionIndex]: selectedOption,
+      [questionId.toString()]: option,
     }));
   }
 
-  return (
-    <main className="min-h-screen px-4 py-8 text-white sm:px-6 md:px-10">
-      <div className="mx-auto max-w-7xl">
-        {/* Error Notification */}
-        {error && (
-          <div className="mb-8 flex items-center justify-between rounded-2xl border border-red-400/30 bg-red-950/60 p-4 text-sm text-red-300 shadow-xl backdrop-blur-xl">
-            <div className="flex items-center gap-3">
-              <span className="text-lg">⚠️</span>
-              <span>{error}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => handleGenerateTopic(topic)}
-              disabled={isLoading}
-              className="rounded-xl border border-red-400/40 bg-red-500/20 px-3 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-red-500/30 disabled:opacity-50"
-            >
-              Retry
-            </button>
-          </div>
-        )}
+  async function handleSubmitQuiz() {
+    if (!lesson) return;
+    setIsSubmittingQuiz(true);
+    setError(null);
+    try {
+      const result = await submitLessonQuiz(lesson.id, quizAnswers);
+      setQuizResult(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Quiz submission failed');
+    } finally {
+      setIsSubmittingQuiz(false);
+    }
+  }
 
-        {/* Loading Overlay / Progress Card */}
-        {isLoading && (
-          <div className="mb-10 flex flex-col items-center justify-center rounded-3xl border border-sky-400/20 bg-slate-950/80 p-12 text-center shadow-2xl backdrop-blur-xl">
-            <div className="relative mb-6 flex h-16 w-16 items-center justify-center">
-              <div className="absolute inset-0 animate-ping rounded-full bg-sky-400/20" />
-              <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-400 to-cyan-500 text-slate-950 shadow-lg shadow-sky-500/30">
-                <svg className="h-6 w-6 animate-spin text-slate-950" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                </svg>
-              </div>
+  async function handleCompleteModule() {
+    if (!lesson) return;
+    setIsCompleting(true);
+    setError(null);
+    try {
+      const updatedRoadmap = await completeModule(lesson.roadmap_module_id);
+      setUserRoadmap(updatedRoadmap);
+
+      // Find next unlocked module if available
+      const nextMod = updatedRoadmap.modules.find(
+        (m) => m.order_index === lesson.lesson_order + 1,
+      );
+      setNextModuleId(nextMod ? nextMod.id : null);
+      setShowXpModal(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to complete module');
+    } finally {
+      setIsCompleting(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center text-xs text-slate-500">
+        Loading interactive lesson...
+      </main>
+    );
+  }
+
+  if (!lesson) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center gap-4 text-center px-4">
+        <p className="text-sm text-slate-400">Lesson not found or roadmap not initialized.</p>
+        <Link
+          href="/roadmap"
+          className="rounded-xl bg-sky-400 px-4 py-2 text-xs font-bold text-slate-950"
+        >
+          Select Career Roadmap →
+        </Link>
+      </main>
+    );
+  }
+
+  const { content } = lesson;
+
+  return (
+    <main className="relative min-h-screen overflow-hidden px-4 py-8 text-white sm:px-6 md:px-10">
+      {/* Ambient background */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-sky-500/10 blur-3xl" />
+        <div className="absolute right-0 top-1/3 h-96 w-96 rounded-full bg-violet-500/10 blur-3xl" />
+      </div>
+
+      <div className="relative mx-auto max-w-6xl space-y-8">
+        {/* Navigation & Breadcrumb */}
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.08] pb-4">
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <Link href="/roadmap" className="hover:text-sky-300 transition">
+              {userRoadmap?.title || 'Roadmap'}
+            </Link>
+            <span>/</span>
+            <span className="text-sky-400 font-semibold">Module {lesson.lesson_order}: {lesson.title}</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Link
+              href="/roadmap"
+              className="rounded-xl border border-white/[0.08] bg-slate-900/80 px-3.5 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800 transition"
+            >
+              All Modules ⇄
+            </Link>
+            <Link
+              href="/mentor"
+              className="rounded-xl border border-sky-400/20 bg-sky-400/10 px-3.5 py-1.5 text-xs font-semibold text-sky-300 hover:bg-sky-400/20 transition"
+            >
+              Ask AI Mentor ✦
+            </Link>
+          </div>
+        </div>
+
+        {/* 1. HERO & OBJECTIVE */}
+        <section className="rounded-3xl border border-white/[0.08] bg-slate-950/70 p-6 backdrop-blur-xl sm:p-8">
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider text-sky-400">
+              Interactive Lesson
+            </span>
+            <span className="text-xs text-slate-500">Module {lesson.lesson_order}</span>
+          </div>
+
+          <h1 className="text-3xl font-bold tracking-tight text-white md:text-4xl">
+            {content.title}
+          </h1>
+
+          <p className="mt-3 text-xs leading-relaxed text-slate-300 sm:text-sm">
+            {content.objective}
+          </p>
+
+          {error && (
+            <div className="mt-4 rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-2.5 text-xs text-red-300">
+              {error}
             </div>
-            <h2 className="text-xl font-semibold text-white">
-              Generating Structured Lesson
-            </h2>
-            <p className="mt-2 text-sm text-slate-400">
-              Structuring definitions, real-world analogies, code examples, interactive quizzes, and assignments...
+          )}
+        </section>
+
+        {/* 2. WHY LEARN & EXPLANATION */}
+        <section className="grid gap-5 md:grid-cols-2">
+          {/* Motivation card */}
+          <div className="rounded-2xl border border-white/[0.08] bg-slate-950/60 p-6 backdrop-blur-xl">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-sky-400">
+              Why Learn This
+            </span>
+            <h2 className="mt-2 text-lg font-bold text-white">Engineering Relevance</h2>
+            <p className="mt-2 text-xs leading-relaxed text-slate-400">
+              {content.why_learn}
             </p>
           </div>
-        )}
 
-        {/* View 1: Active Lesson State */}
-        {!isLoading && lessonData ? (
-          <div className="space-y-10">
-            {/* Header & Back Action */}
-            <div className="flex flex-col gap-4 border-b border-white/[0.08] pb-6 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <button
-                  type="button"
-                  onClick={handleResetToDiscovery}
-                  className="mb-3 flex items-center gap-1.5 text-xs font-medium text-sky-400 transition hover:text-sky-300"
-                >
-                  <span>←</span>
-                  <span>Explore Other Topics</span>
-                </button>
-                <div className="flex flex-wrap items-center gap-3">
-                  <h1 className="text-3xl font-bold tracking-tight text-white md:text-4xl">
-                    {lessonData.topic}
-                  </h1>
-                  <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-0.5 text-xs font-semibold uppercase tracking-wider text-sky-300">
-                    AI Lesson
-                  </span>
+          {/* Core Explanation card */}
+          <div className="rounded-2xl border border-white/[0.08] bg-slate-950/60 p-6 backdrop-blur-xl">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-violet-400">
+              Core Concept
+            </span>
+            <h2 className="mt-2 text-lg font-bold text-white">How It Works</h2>
+            <p className="mt-2 text-xs leading-relaxed text-slate-400">
+              {content.explanation}
+            </p>
+          </div>
+        </section>
+
+        {/* 3. SYNTAX & EXAMPLES */}
+        <section className="rounded-3xl border border-white/[0.08] bg-slate-950/70 p-6 backdrop-blur-xl space-y-6">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-sky-400">
+              Syntax Guide
+            </span>
+            <h2 className="mt-1 text-xl font-bold text-white">Code Anatomy & Patterns</h2>
+            <div className="mt-3 rounded-xl border border-white/[0.08] bg-black/40 p-4 font-mono text-xs text-slate-300 overflow-x-auto">
+              <pre>{content.syntax}</pre>
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 pt-2">
+            {content.examples.map((ex, idx) => (
+              <div key={idx} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+                <h3 className="text-sm font-bold text-sky-300">{ex.title}</h3>
+                <p className="mt-1 text-xs text-slate-400">{ex.explanation}</p>
+                <div className="mt-3 rounded-xl border border-white/[0.06] bg-black/50 p-3 font-mono text-xs text-slate-200 overflow-x-auto">
+                  <pre>{ex.code}</pre>
                 </div>
               </div>
+            ))}
+          </div>
+        </section>
 
-              <div className="flex items-center gap-2">
-                <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={topic}
-                    onChange={(e) => setTopic(e.target.value)}
-                    placeholder="Search another topic..."
-                    className="rounded-xl border border-white/[0.1] bg-slate-900/80 px-3 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-sky-400"
-                  />
-                  <button
-                    type="submit"
-                    disabled={isLoading || !topic.trim()}
-                    className="rounded-xl bg-sky-400 px-3 py-2 text-xs font-semibold text-slate-950 shadow-md transition hover:bg-sky-300 disabled:opacity-50"
-                  >
-                    Learn
-                  </button>
-                </form>
-              </div>
+        {/* 4. INTERACTIVE PRACTICE & EMBEDDED MONACO CODE RUNNER */}
+        <section className="rounded-3xl border border-sky-500/20 bg-slate-950/80 p-6 shadow-2xl backdrop-blur-xl sm:p-8 space-y-6">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-2.5 py-0.5 text-[10px] font-bold uppercase text-sky-400">
+                Interactive Challenge
+              </span>
+              <h2 className="mt-2 text-xl font-bold text-white">Write & Run Your Code</h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCode(content.interactive_practice.starter_code)}
+                className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-slate-400 hover:text-white transition"
+              >
+                Reset Starter Code ↺
+              </button>
+            </div>
+          </div>
+
+          {/* Prompt card */}
+          <div className="rounded-2xl border border-sky-400/10 bg-sky-500/[0.05] p-4">
+            <p className="text-xs leading-relaxed text-slate-200">
+              <strong className="text-sky-300">Prompt: </strong>
+              {content.interactive_practice.prompt}
+            </p>
+            <div className="mt-2 text-xs font-mono text-slate-400">
+              <strong className="text-slate-300">Expected Output: </strong>
+              <span className="text-emerald-400 font-semibold">{content.interactive_practice.expected_output}</span>
+            </div>
+          </div>
+
+          {/* Monaco Editor Container */}
+          <div className="overflow-hidden rounded-2xl border border-white/[0.1] bg-[#1e1e1e] shadow-xl">
+            <div className="flex items-center justify-between border-b border-white/[0.08] bg-[#252526] px-4 py-2 text-xs">
+              <span className="font-mono text-slate-400">
+                solution.{content.interactive_practice.language === 'python' ? 'py' : 'js'}
+              </span>
+              <span className="text-[11px] text-slate-500">Auto-validating code runner</span>
+            </div>
+            <Editor
+              height="280px"
+              language={content.interactive_practice.language || 'python'}
+              theme="vs-dark"
+              value={code}
+              onChange={(val) => setCode(val || '')}
+              options={{
+                fontSize: 13,
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                lineNumbers: 'on',
+                fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+              }}
+            />
+          </div>
+
+          {/* Run Code Control & Console Output */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                disabled={isExecuting}
+                onClick={handleRunCode}
+                className="flex items-center gap-2 rounded-xl bg-gradient-to-br from-sky-400 to-cyan-400 px-6 py-2.5 text-xs font-bold text-slate-950 shadow-lg shadow-sky-500/20 transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+              >
+                <span>{isExecuting ? 'Running & Validating...' : '▶ Run & Validate Code'}</span>
+              </button>
+
+              {execResult?.passed && (
+                <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-bold text-emerald-400">
+                  Challenge Solved ✓ (+30 XP)
+                </span>
+              )}
             </div>
 
-            {/* 1. Why Learn This */}
-            {lessonData.why_learn_this && (
-              <section className="rounded-3xl border border-sky-400/20 bg-gradient-to-br from-sky-500/[0.08] via-slate-950/70 to-violet-500/[0.05] p-6 shadow-xl backdrop-blur-xl md:p-8">
-                <div className="flex items-start gap-4">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-400/20 text-lg text-sky-300">
-                    💡
-                  </div>
-                  <div>
-                    <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-400">
-                      1. Why Learn This?
-                    </h2>
-                    <p className="mt-2 text-sm leading-relaxed text-slate-200 md:text-base">
-                      {lessonData.why_learn_this}
-                    </p>
-                  </div>
-                </div>
-              </section>
-            )}
-
-            {/* 2, 3, 4. Core Concepts, Definitions & Analogies */}
-            <section className="grid gap-6 md:grid-cols-3">
-              {/* Professional Definition */}
-              <div className="rounded-2xl border border-white/[0.08] bg-slate-950/60 p-6 shadow-lg backdrop-blur-xl">
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="text-base">📐</span>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                    2. Professional Definition
-                  </h3>
-                </div>
-                <p className="text-xs leading-relaxed text-slate-200">
-                  {lessonData.professional_definition}
-                </p>
-              </div>
-
-              {/* Easy Explanation */}
-              <div className="rounded-2xl border border-white/[0.08] bg-slate-950/60 p-6 shadow-lg backdrop-blur-xl">
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="text-base">✨</span>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                    3. Simple Explanation
-                  </h3>
-                </div>
-                <p className="text-xs leading-relaxed text-slate-200">
-                  {lessonData.easy_explanation}
-                </p>
-              </div>
-
-              {/* Real World Analogy */}
-              <div className="rounded-2xl border border-white/[0.08] bg-slate-950/60 p-6 shadow-lg backdrop-blur-xl">
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="text-base">🌍</span>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                    4. Real-World Analogy
-                  </h3>
-                </div>
-                <p className="text-xs leading-relaxed text-slate-200">
-                  {lessonData.real_world_analogy}
-                </p>
-              </div>
-            </section>
-
-            {/* 5. Real-World Applications */}
-            {lessonData.real_world_applications && lessonData.real_world_applications.length > 0 && (
-              <section className="rounded-3xl border border-white/[0.08] bg-slate-950/50 p-6 shadow-lg md:p-8">
-                <h2 className="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
-                  5. Real-World Applications
-                </h2>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {lessonData.real_world_applications.map((app, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-slate-900/60 p-4"
-                    >
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-cyan-400/10 text-xs font-bold text-cyan-300">
-                        {idx + 1}
-                      </span>
-                      <p className="text-xs text-slate-300 leading-relaxed">{app}</p>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* 6. Syntax or Core Mechanics */}
-            {lessonData.syntax_or_core_concepts && (
-              <section className="rounded-3xl border border-white/[0.08] bg-slate-950/70 p-6 shadow-lg md:p-8">
-                <h2 className="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-violet-300">
-                  6. Syntax & Core Concepts
-                </h2>
-                <div className="rounded-2xl border border-white/[0.06] bg-slate-900/80 p-5 font-mono text-xs leading-relaxed text-slate-200 whitespace-pre-wrap">
-                  {lessonData.syntax_or_core_concepts}
-                </div>
-              </section>
-            )}
-
-            {/* 7. Examples */}
-            {lessonData.examples && lessonData.examples.length > 0 && (
-              <section className="rounded-3xl border border-white/[0.08] bg-slate-950/50 p-6 shadow-lg md:p-8">
-                <h2 className="mb-6 text-xs font-semibold uppercase tracking-[0.2em] text-sky-400">
-                  7. Code & Concept Examples
-                </h2>
-                <div className="space-y-6">
-                  {lessonData.examples.map((eg, idx) => (
-                    <div
-                      key={idx}
-                      className="overflow-hidden rounded-2xl border border-white/[0.08] bg-slate-900/60"
-                    >
-                      <div className="border-b border-white/[0.06] bg-slate-900/90 px-5 py-3 flex items-center justify-between">
-                        <span className="text-xs font-semibold text-white">
-                          Example {idx + 1}: {eg.title}
-                        </span>
-                        {eg.code && (
-                          <span className="rounded bg-white/[0.06] px-2 py-0.5 font-mono text-[10px] text-slate-400">
-                            Code Snippet
-                          </span>
-                        )}
-                      </div>
-                      <div className="p-5 space-y-3">
-                        <p className="text-xs text-slate-300 leading-relaxed">
-                          {eg.explanation}
-                        </p>
-                        {eg.code && (
-                          <pre className="overflow-x-auto rounded-xl border border-white/[0.06] bg-black/50 p-4 font-mono text-xs text-emerald-300 leading-relaxed">
-                            {eg.code}
-                          </pre>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* 8. Common Mistakes */}
-            {lessonData.common_mistakes && lessonData.common_mistakes.length > 0 && (
-              <section className="rounded-3xl border border-amber-400/20 bg-amber-950/20 p-6 shadow-lg md:p-8">
-                <div className="mb-4 flex items-center gap-2">
-                  <span className="text-lg">⚠️</span>
-                  <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-300">
-                    8. Common Mistakes to Avoid
-                  </h2>
-                </div>
-                <ul className="space-y-2.5 pl-2">
-                  {lessonData.common_mistakes.map((mistake, idx) => (
-                    <li key={idx} className="flex items-start gap-2 text-xs text-amber-200/90 leading-relaxed">
-                      <span className="text-amber-400">•</span>
-                      <span>{mistake}</span>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-
-            {/* 9. Interactive Practice */}
-            {lessonData.interactive_practice && lessonData.interactive_practice.length > 0 && (
-              <section className="rounded-3xl border border-white/[0.08] bg-slate-950/50 p-6 shadow-lg md:p-8">
-                <h2 className="mb-6 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">
-                  9. Interactive Practice Exercises
-                </h2>
-                <div className="space-y-4">
-                  {lessonData.interactive_practice.map((item, idx) => (
-                    <div
-                      key={idx}
-                      className="rounded-2xl border border-white/[0.06] bg-slate-900/60 p-5"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <p className="text-xs font-medium text-slate-100 leading-relaxed">
-                          <strong className="text-emerald-400">Exercise {idx + 1}:</strong> {item.question}
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => toggleHint(idx)}
-                          className="shrink-0 rounded-lg border border-white/[0.1] bg-white/[0.05] px-2.5 py-1 text-[11px] font-medium text-slate-300 transition hover:bg-white/[0.1]"
-                        >
-                          {revealedHints[idx] ? 'Hide Hint' : '💡 Show Hint'}
-                        </button>
-                      </div>
-                      {revealedHints[idx] && (
-                        <div className="mt-3 rounded-xl border border-emerald-400/20 bg-emerald-950/30 p-3 text-xs text-emerald-200">
-                          <strong className="text-emerald-300">Hint: </strong>
-                          {item.hint}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* 10. Quiz */}
-            {lessonData.quiz && lessonData.quiz.length > 0 && (
-              <section className="rounded-3xl border border-white/[0.08] bg-slate-950/70 p-6 shadow-xl md:p-8">
-                <div className="mb-6 flex items-center justify-between">
-                  <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-400">
-                    10. Knowledge Check Quiz
-                  </h2>
-                  <span className="text-[11px] text-slate-400">
-                    {Object.keys(quizAnswers).length} / {lessonData.quiz.length} Answered
+            {/* Console Output Box */}
+            {execResult && (
+              <div
+                className={`rounded-2xl border p-4 font-mono text-xs transition-all ${
+                  execResult.passed
+                    ? 'border-emerald-500/30 bg-emerald-950/20 text-emerald-300'
+                    : 'border-red-500/30 bg-red-950/20 text-red-300'
+                }`}
+              >
+                <div className="flex items-center justify-between pb-2 border-b border-white/[0.08]">
+                  <span className="font-bold">
+                    {execResult.passed ? '✓ Output Passed (100/100)' : '✗ Output Mismatch (0/100)'}
+                  </span>
+                  <span className="text-[10px] opacity-70">
+                    {execResult.passed ? 'All test conditions met' : 'Inspect feedback below'}
                   </span>
                 </div>
 
-                <div className="space-y-6">
-                  {lessonData.quiz.map((q, qIdx) => {
-                    const selected = quizAnswers[qIdx];
-                    const isAnswered = selected !== undefined;
-                    const isCorrect = isAnswered && selected === q.answer;
-
-                    return (
-                      <div
-                        key={qIdx}
-                        className="rounded-2xl border border-white/[0.06] bg-slate-900/60 p-5"
-                      >
-                        <p className="mb-4 text-xs font-semibold text-white">
-                          Q{qIdx + 1}: {q.question}
-                        </p>
-
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          {q.options.map((opt, optIdx) => {
-                            const isThisSelected = selected === opt;
-                            const isThisCorrectAnswer = opt === q.answer;
-
-                            let buttonStyle = 'border-white/[0.08] bg-slate-950/60 text-slate-300 hover:border-white/20';
-
-                            if (isAnswered) {
-                              if (isThisCorrectAnswer) {
-                                buttonStyle = 'border-emerald-500/50 bg-emerald-950/50 text-emerald-200';
-                              } else if (isThisSelected && !isCorrect) {
-                                buttonStyle = 'border-red-500/50 bg-red-950/50 text-red-200';
-                              } else {
-                                buttonStyle = 'border-white/[0.04] bg-slate-950/30 text-slate-500 opacity-60';
-                              }
-                            }
-
-                            return (
-                              <button
-                                key={optIdx}
-                                type="button"
-                                onClick={() => handleSelectQuizOption(qIdx, opt)}
-                                className={`flex items-center justify-between rounded-xl border p-3 text-left text-xs font-medium transition ${buttonStyle}`}
-                              >
-                                <span>{opt}</span>
-                                {isAnswered && isThisCorrectAnswer && <span>✓</span>}
-                                {isAnswered && isThisSelected && !isCorrect && <span>✗</span>}
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        {isAnswered && (
-                          <div
-                            className={`mt-4 rounded-xl border p-3 text-xs leading-relaxed ${
-                              isCorrect
-                                ? 'border-emerald-400/20 bg-emerald-950/30 text-emerald-200'
-                                : 'border-amber-400/20 bg-amber-950/30 text-amber-200'
-                            }`}
-                          >
-                            <strong className={isCorrect ? 'text-emerald-300' : 'text-amber-300'}>
-                              {isCorrect ? 'Correct! ' : 'Explanation: '}
-                            </strong>
-                            {q.explanation}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            )}
-
-            {/* 11 & 12. Assignment & Mini Project */}
-            <section className="grid gap-6 lg:grid-cols-2">
-              {/* Assignment */}
-              {lessonData.assignment && (
-                <div className="rounded-3xl border border-white/[0.08] bg-slate-950/60 p-6 shadow-lg backdrop-blur-xl">
-                  <div className="mb-3 flex items-center gap-2">
-                    <span className="text-lg">📝</span>
-                    <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
-                      11. Hands-on Assignment
-                    </h2>
+                <div className="mt-3 space-y-2">
+                  <p className="font-sans text-xs">{execResult.feedback}</p>
+                  <div>
+                    <span className="text-slate-400">Actual Output: </span>
+                    <pre className="mt-1 rounded bg-black/40 p-2 text-white overflow-x-auto">
+                      {execResult.actual_output || '(no stdout produced)'}
+                    </pre>
                   </div>
-                  <h3 className="text-sm font-bold text-white">{lessonData.assignment.title}</h3>
-                  <p className="mt-2 text-xs text-slate-300 leading-relaxed">
-                    {lessonData.assignment.description}
-                  </p>
-                  {lessonData.assignment.requirements && (
-                    <div className="mt-4 space-y-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                        Requirements:
-                      </p>
-                      <ul className="space-y-1.5 pl-2 text-xs text-slate-300">
-                        {lessonData.assignment.requirements.map((req, rIdx) => (
-                          <li key={rIdx} className="flex items-start gap-2">
-                            <span className="text-cyan-400">◽</span>
-                            <span>{req}</span>
-                          </li>
-                        ))}
-                      </ul>
+                  {execResult.error && (
+                    <div>
+                      <span className="text-red-400">Error: </span>
+                      <pre className="mt-1 rounded bg-black/40 p-2 text-red-300 overflow-x-auto">
+                        {execResult.error}
+                      </pre>
                     </div>
                   )}
                 </div>
-              )}
-
-              {/* Mini Project */}
-              {lessonData.mini_project && (
-                <div className="rounded-3xl border border-white/[0.08] bg-slate-950/60 p-6 shadow-lg backdrop-blur-xl">
-                  <div className="mb-3 flex items-center gap-2">
-                    <span className="text-lg">🚀</span>
-                    <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-300">
-                      12. Capstone Mini Project
-                    </h2>
-                  </div>
-                  <h3 className="text-sm font-bold text-white">{lessonData.mini_project.title}</h3>
-                  <p className="mt-2 text-xs text-slate-300 leading-relaxed">
-                    {lessonData.mini_project.description}
-                  </p>
-                  {lessonData.mini_project.requirements && (
-                    <div className="mt-4 space-y-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                        Requirements:
-                      </p>
-                      <ul className="space-y-1.5 pl-2 text-xs text-slate-300">
-                        {lessonData.mini_project.requirements.map((req, rIdx) => (
-                          <li key={rIdx} className="flex items-start gap-2">
-                            <span className="text-violet-400">◽</span>
-                            <span>{req}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
-            </section>
-
-            {/* 13 & 14. Related Topics & Next Topic */}
-            <section className="rounded-3xl border border-white/[0.08] bg-gradient-to-br from-white/[0.04] to-white/[0.01] p-6 shadow-lg md:p-8">
-              <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                <div className="space-y-3">
-                  <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                    Related Concepts
-                  </h2>
-                  <div className="flex flex-wrap gap-2">
-                    {lessonData.related_topics &&
-                      lessonData.related_topics.map((relTopic, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          disabled={isLoading}
-                          onClick={() => handleGenerateTopic(relTopic)}
-                          className="rounded-full border border-white/[0.1] bg-white/[0.04] px-3.5 py-1.5 text-xs text-slate-300 transition hover:border-sky-400/40 hover:bg-sky-400/10 hover:text-white disabled:opacity-50"
-                        >
-                          {relTopic} →
-                        </button>
-                      ))}
-                  </div>
-                </div>
-
-                {lessonData.next_topic && (
-                  <div className="shrink-0 rounded-2xl border border-sky-400/30 bg-sky-500/10 p-5 text-right">
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-sky-400">
-                      Recommended Next Topic
-                    </p>
-                    <p className="mt-1 text-sm font-bold text-white">{lessonData.next_topic}</p>
-                    <button
-                      type="button"
-                      disabled={isLoading}
-                      onClick={() => handleGenerateTopic(lessonData.next_topic)}
-                      className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-sky-400 px-4 py-2 text-xs font-bold text-slate-950 shadow-md transition hover:bg-sky-300 disabled:opacity-50"
-                    >
-                      <span>Start Next Topic</span>
-                      <span>→</span>
-                    </button>
-                  </div>
-                )}
               </div>
-            </section>
+            )}
           </div>
-        ) : (
-          /* View 2: Discovery State (Default) */
-          !isLoading && (
-            <>
-              {/* Header */}
-              <section className="mb-10">
-                <div className="mb-3 flex items-center gap-3">
-                  <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-medium text-cyan-300">
-                    KNOWLEDGE EXPLORER
-                  </span>
-                  <span className="text-xs text-white/40">
-                    Learn anything, step by step
-                  </span>
-                </div>
 
-                <h1 className="text-4xl font-semibold tracking-tight md:text-5xl">
-                  What do you want to learn?
-                </h1>
-
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-white/50 md:text-base">
-                  Explore technical concepts, programming languages, AI topics and
-                  more through structured learning instead of random explanations.
+          {/* 5. PROGRESSIVE AI HINT LADDER */}
+          <div className="pt-4 border-t border-white/[0.08] space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-white">Progressive AI Hint Ladder</h3>
+                <p className="text-[11px] text-slate-400">
+                  Unlock progressive clues without spoiling the solution immediately.
                 </p>
-              </section>
+              </div>
 
-              {/* Search */}
-              <section className="mb-12">
-                <form
-                  onSubmit={handleSearchSubmit}
-                  className="rounded-3xl border border-white/10 bg-white/[0.035] p-3 shadow-2xl shadow-black/20"
+              {revealedHintLevel < 4 && (
+                <button
+                  type="button"
+                  onClick={unlockNextHint}
+                  className="rounded-xl border border-sky-400/30 bg-sky-400/10 px-3.5 py-1.5 text-xs font-semibold text-sky-300 hover:bg-sky-400/20 transition"
                 >
-                  <div className="flex flex-col gap-3 md:flex-row">
-                    <div className="flex flex-1 items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-5 py-4">
-                      <span className="text-lg text-white/40">⌕</span>
+                  {revealedHintLevel === 0
+                    ? '💡 Reveal Hint 1 (Direction)'
+                    : revealedHintLevel === 1
+                    ? '💡 Reveal Hint 2 (Logic)'
+                    : revealedHintLevel === 2
+                    ? '💡 Reveal Hint 3 (Partial Code)'
+                    : '🔓 Reveal Final Solution'}
+                </button>
+              )}
+            </div>
 
-                      <input
-                        type="text"
-                        value={topic}
-                        onChange={(event) => setTopic(event.target.value)}
-                        placeholder="Search a topic... e.g. Recursion, Python, APIs"
-                        className="w-full bg-transparent text-sm text-white outline-none placeholder:text-white/30"
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={isLoading || !topic.trim()}
-                      className="rounded-2xl bg-white px-7 py-4 text-sm font-semibold text-black transition hover:bg-white/90 disabled:opacity-50"
-                    >
-                      Start Learning
-                    </button>
-                  </div>
-                </form>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <span className="text-xs text-white/30">Try:</span>
-
-                  {['Python', 'Recursion', 'APIs', 'Machine Learning', 'SQL'].map(
-                    (item) => (
-                      <button
-                        key={item}
-                        type="button"
-                        onClick={() => handleTopicSelect(item)}
-                        className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-white/50 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
-                      >
-                        {item}
-                      </button>
-                    ),
-                  )}
+            <div className="space-y-2.5">
+              {revealedHintLevel >= 1 && (
+                <div className="rounded-xl border border-sky-400/20 bg-sky-400/[0.05] p-3.5 text-xs">
+                  <span className="font-bold text-sky-300">Hint 1 (Direction): </span>
+                  <span className="text-slate-300">{content.hints.hint_1}</span>
                 </div>
-              </section>
+              )}
 
-              {/* Popular Topics */}
-              <section className="mb-12">
-                <div className="mb-5 flex items-end justify-between">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-[0.2em] text-cyan-300/70">
-                      Explore
-                    </p>
-
-                    <h2 className="mt-2 text-2xl font-semibold">
-                      Popular topics
-                    </h2>
-                  </div>
-
-                  <span className="text-xs text-white/30">
-                    Start anywhere
-                  </span>
+              {revealedHintLevel >= 2 && (
+                <div className="rounded-xl border border-violet-400/20 bg-violet-400/[0.05] p-3.5 text-xs">
+                  <span className="font-bold text-violet-300">Hint 2 (Logic): </span>
+                  <span className="text-slate-300">{content.hints.hint_2}</span>
                 </div>
+              )}
 
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {popularTopics.map((item) => (
-                    <button
-                      key={item.title}
-                      type="button"
-                      onClick={() => handleTopicSelect(item.title)}
-                      className="group rounded-2xl border border-white/10 bg-white/[0.025] p-5 text-left transition duration-200 hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/[0.05]"
-                    >
-                      <div className="mb-5 flex items-start justify-between">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-sm font-semibold text-white/80">
-                          {item.icon}
-                        </div>
-
-                        <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] text-white/40">
-                          {item.level}
-                        </span>
-                      </div>
-
-                      <h3 className="text-base font-semibold text-white">
-                        {item.title}
-                      </h3>
-
-                      <p className="mt-2 text-sm leading-6 text-white/40">
-                        {item.description}
-                      </p>
-
-                      <div className="mt-5 text-xs font-medium text-white/40 transition group-hover:text-cyan-300">
-                        Explore topic →
-                      </div>
-                    </button>
-                  ))}
+              {revealedHintLevel >= 3 && (
+                <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.05] p-3.5 text-xs">
+                  <span className="font-bold text-amber-300">Hint 3 (Partial Code): </span>
+                  <span className="text-slate-300">{content.hints.hint_3}</span>
                 </div>
-              </section>
+              )}
 
-              {/* Learning Framework */}
-              <section className="mb-12 rounded-3xl border border-white/10 bg-white/[0.025] p-6 md:p-8">
-                <div className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr]">
-                  <div>
-                    <span className="text-xs font-medium uppercase tracking-[0.2em] text-cyan-300/70">
-                      Structured Learning
-                    </span>
+              {revealedHintLevel >= 4 && (
+                <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.05] p-4 text-xs font-mono">
+                  <div className="font-sans font-bold text-emerald-300 pb-2">Final Solution:</div>
+                  <pre className="text-slate-200 overflow-x-auto">{content.hints.final_solution}</pre>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
 
-                    <h2 className="mt-3 text-2xl font-semibold">
-                      Learn beyond a simple AI answer.
-                    </h2>
+        {/* 6. QUIZ SECTION */}
+        <section className="rounded-3xl border border-white/[0.08] bg-slate-950/70 p-6 backdrop-blur-xl sm:p-8 space-y-6">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <span className="rounded-full border border-violet-400/20 bg-violet-400/10 px-2.5 py-0.5 text-[10px] font-bold uppercase text-violet-300">
+                Concept Checkpoint
+              </span>
+              <h2 className="mt-2 text-xl font-bold text-white">Module Knowledge Quiz</h2>
+            </div>
 
-                    <p className="mt-3 max-w-md text-sm leading-6 text-white/40">
-                      Every topic is designed around a consistent educational
-                      structure so you can understand, practice and test what you
-                      learn.
-                    </p>
+            {quizResult && (
+              <span
+                className={`rounded-full border px-3 py-1 text-xs font-bold ${
+                  quizResult.passed
+                    ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+                    : 'border-red-400/30 bg-red-400/10 text-red-300'
+                }`}
+              >
+                Score: {quizResult.score}/{quizResult.total} ({quizResult.percentage}%)
+              </span>
+            )}
+          </div>
 
-                    <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-sm font-bold text-black">
-                          AI
-                        </div>
+          <div className="space-y-6">
+            {content.quiz.map((q, qIdx) => {
+              const selected = quizAnswers[q.id.toString()];
+              const qResult = quizResult?.results.find((r) => r.question_id === q.id);
 
-                        <div>
-                          <p className="text-sm font-medium">
-                            TechSeeker Intelligence
-                          </p>
-
-                          <p className="text-xs text-white/30">
-                            Structured explanation engine
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+              return (
+                <div key={q.id} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 space-y-3">
+                  <p className="text-sm font-semibold text-slate-200">
+                    <span className="text-sky-400 mr-2">{qIdx + 1}.</span>
+                    {q.question}
+                  </p>
 
                   <div className="grid gap-2 sm:grid-cols-2">
-                    {learningFramework.map((item, index) => (
-                      <div
-                        key={item}
-                        className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3"
-                      >
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/[0.06] text-[11px] font-medium text-white/50">
-                          {String(index + 1).padStart(2, '0')}
-                        </span>
+                    {q.options.map((opt) => {
+                      const isSelected = selected === opt;
+                      const isCorrect = qResult?.correct_answer === opt;
+                      const isWrong = isSelected && qResult && !qResult.is_correct;
 
-                        <span className="text-xs text-white/60">{item}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
-
-              {/* Bottom CTA */}
-              <section className="mb-8 overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-white/[0.06] to-white/[0.015] p-7 md:p-9">
-                <div className="flex flex-col justify-between gap-6 md:flex-row md:items-center">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-white/30">
-                      Your learning journey
-                    </p>
-
-                    <h2 className="mt-2 text-2xl font-semibold">
-                      Pick a topic. Build real understanding.
-                    </h2>
-
-                    <p className="mt-2 max-w-xl text-sm text-white/40">
-                      Start with a concept today and progressively move toward
-                      practice, projects and deeper technical understanding.
-                    </p>
+                      return (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => handleSelectQuizOption(q.id, opt)}
+                          className={`flex items-center justify-between rounded-xl border p-3 text-left text-xs transition-all ${
+                            isCorrect && quizResult
+                              ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-300 font-semibold'
+                              : isWrong
+                              ? 'border-red-400/40 bg-red-500/15 text-red-300'
+                              : isSelected
+                              ? 'border-sky-400 bg-sky-500/15 text-white font-medium'
+                              : 'border-white/[0.08] bg-slate-900/60 text-slate-300 hover:bg-slate-800'
+                          }`}
+                        >
+                          <span>{opt}</span>
+                          {isCorrect && quizResult && <span className="text-emerald-400 font-bold">✓</span>}
+                          {isWrong && <span className="text-red-400 font-bold">✗</span>}
+                        </button>
+                      );
+                    })}
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const input = document.querySelector(
-                        'input[placeholder*="Search a topic"]',
-                      ) as HTMLInputElement | null;
-
-                      input?.focus();
-                    }}
-                    className="shrink-0 rounded-xl border border-white/10 bg-white/[0.06] px-5 py-3 text-sm font-medium text-white transition hover:bg-white/[0.1]"
-                  >
-                    Explore Topics →
-                  </button>
+                  {qResult && (
+                    <div className="mt-2 rounded-xl border border-white/[0.06] bg-black/40 p-3 text-xs text-slate-400">
+                      <strong className="text-slate-300">Explanation: </strong>
+                      {qResult.explanation}
+                    </div>
+                  )}
                 </div>
-              </section>
-            </>
-          )
-        )}
+              );
+            })}
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="button"
+              disabled={isSubmittingQuiz || Object.keys(quizAnswers).length === 0}
+              onClick={handleSubmitQuiz}
+              className="rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 px-6 py-2.5 text-xs font-bold text-white shadow-lg shadow-violet-500/20 transition hover:opacity-90 disabled:opacity-50"
+            >
+              {isSubmittingQuiz ? 'Grading Quiz...' : 'Submit Quiz Answers'}
+            </button>
+          </div>
+        </section>
+
+        {/* 7. ASSIGNMENT & COMPLETE MODULE */}
+        <section className="rounded-3xl border border-white/[0.08] bg-slate-950/70 p-6 backdrop-blur-xl sm:p-8 space-y-6">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-orange-400">
+              Module Capstone
+            </span>
+            <h2 className="mt-1 text-xl font-bold text-white">{content.assignment.title}</h2>
+            <p className="mt-2 text-xs leading-relaxed text-slate-400">
+              {content.assignment.description}
+            </p>
+
+            <div className="mt-4 space-y-2">
+              <p className="text-xs font-semibold text-slate-300">Key Requirements:</p>
+              <ul className="grid gap-2 sm:grid-cols-2 text-xs text-slate-400">
+                {content.assignment.requirements.map((req, idx) => (
+                  <li key={idx} className="flex items-start gap-2">
+                    <span className="text-sky-400 font-bold">▸</span>
+                    <span>{req}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          <div className="pt-6 border-t border-white/[0.08] flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-white">Ready to progress?</h3>
+              <p className="text-xs text-slate-400">
+                Completing this module records your progress and auto-unlocks the next milestone.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              disabled={isCompleting}
+              onClick={handleCompleteModule}
+              className="rounded-xl bg-gradient-to-br from-emerald-400 to-teal-400 px-7 py-3 text-xs font-bold text-slate-950 shadow-lg shadow-emerald-500/20 transition-all duration-200 hover:-translate-y-0.5 hover:opacity-95 disabled:opacity-50"
+            >
+              {isCompleting ? 'Completing Module...' : 'Complete Module & Unlock Next (+25 XP) ✓'}
+            </button>
+          </div>
+        </section>
       </div>
+
+      {/* XP CELEBRATION MODAL */}
+      {showXpModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="relative w-full max-w-md rounded-3xl border border-sky-400/30 bg-slate-950 p-8 text-center shadow-2xl shadow-sky-500/20">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-400 to-emerald-400 text-3xl font-bold text-slate-950 shadow-lg shadow-sky-500/30">
+              🎉
+            </div>
+
+            <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-bold text-emerald-300">
+              +25 XP Earned
+            </span>
+
+            <h2 className="mt-4 text-2xl font-bold text-white">Module Completed!</h2>
+
+            <p className="mt-2 text-xs leading-relaxed text-slate-400">
+              Congratulations! You have mastered Module {lesson.lesson_order} ({lesson.title}). Your next module has been unlocked.
+            </p>
+
+            <div className="mt-6 flex flex-col gap-3">
+              {nextModuleId ? (
+                <Link
+                  href={`/learn?module_id=${nextModuleId}`}
+                  onClick={() => setShowXpModal(false)}
+                  className="w-full rounded-xl bg-gradient-to-br from-sky-400 to-cyan-400 py-3 text-xs font-bold text-slate-950 shadow-md shadow-sky-500/20 hover:opacity-90 transition"
+                >
+                  Start Next Module →
+                </Link>
+              ) : (
+                <Link
+                  href="/roadmap"
+                  onClick={() => setShowXpModal(false)}
+                  className="w-full rounded-xl bg-gradient-to-br from-sky-400 to-cyan-400 py-3 text-xs font-bold text-slate-950 shadow-md shadow-sky-500/20 hover:opacity-90 transition"
+                >
+                  View Career Roadmap →
+                </Link>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setShowXpModal(false)}
+                className="w-full rounded-xl border border-white/[0.08] bg-white/[0.03] py-2.5 text-xs font-medium text-slate-300 hover:bg-white/[0.06] transition"
+              >
+                Stay on Current Lesson
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
+  );
+}
+
+export default function LearnPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center text-xs text-slate-500">
+          Loading learning workspace...
+        </main>
+      }
+    >
+      <LearnContent />
+    </Suspense>
   );
 }

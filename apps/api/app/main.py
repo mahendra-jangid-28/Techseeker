@@ -8,6 +8,9 @@ from app.api.routes.learning import router as learning_router
 from app.api.routes.playground import router as playground_router
 from app.api.routes.debug import router as debug_router
 from app.api.routes.projects import router as projects_router
+from app.api.routes.progress import router as progress_router
+from app.api.routes.roadmaps import router as roadmaps_router
+from app.api.routes.lessons import router as lessons_router
 
 
 app = FastAPI(
@@ -40,6 +43,9 @@ def health():
 
 app.include_router(auth_router)
 app.include_router(users_router)
+app.include_router(progress_router)
+app.include_router(roadmaps_router)
+app.include_router(lessons_router)
 app.include_router(chat_router)
 app.include_router(learning_router)
 app.include_router(playground_router)
