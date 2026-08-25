@@ -1,19 +1,29 @@
 from fastapi import APIRouter
 
 from app.schemas.playground import CodeExecutionRequest, CodeExecutionResponse
-from app.services.runner_service import execute_code_via_runner
+from app.services.code_runner_service import execute_sandboxed_code
 
 router = APIRouter(
-    prefix="/api/v1/playground",
     tags=["Playground"],
 )
 
 
 @router.post(
-    "/execute",
+    "/playground/run",
     response_model=CodeExecutionResponse,
 )
-async def execute_code(
+@router.post(
+    "/api/v1/playground/run",
+    response_model=CodeExecutionResponse,
+)
+@router.post(
+    "/api/v1/playground/execute",
+    response_model=CodeExecutionResponse,
+)
+async def run_code(
     payload: CodeExecutionRequest,
 ) -> CodeExecutionResponse:
-    return await execute_code_via_runner(payload)
+    """
+    Executes Python code in a secure sandboxed environment.
+    """
+    return execute_sandboxed_code(payload)
