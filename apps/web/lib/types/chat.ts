@@ -10,8 +10,11 @@ export type Message = {
   id: number;
   role: MessageRole;
   content: string;
+  is_current?: boolean;
+  parent_message_id?: number | null;
   created_at: string;
 };
+
 
 export type ConversationDetail = Conversation & {
   messages: Message[];

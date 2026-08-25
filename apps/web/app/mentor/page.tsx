@@ -8,8 +8,11 @@ import {
   createConversation,
   getConversationDetail,
   getConversations,
-  sendMessage as sendChatMessage,
+  regenerateMessage,
+  sendStreamingMessage,
 } from '../../lib/api/chat';
+
+
 import type { Conversation, Message } from '../../lib/types/chat';
 
 const suggestions = [
@@ -142,9 +145,11 @@ export default function MentorPage() {
     };
   }, [activeConversationId, router]);
 
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
-    activeConversationIdRef.current = activeConversationId;
-  }, [activeConversationId]);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, sendingMessage]);
 
   async function sendMessage() {
     const trimmedMessage = message.trim();
@@ -170,46 +175,129 @@ export default function MentorPage() {
       conversations.find((conversation) => conversation.id === conversationId)
         ?.title === 'New Chat';
 
+    const userMsgId = Date.now();
+    const userMsg: Message = {
+      id: userMsgId,
+      role: 'user',
+      content: trimmedMessage,
+      created_at: new Date().toISOString(),
+    };
+
+    const assistantMsgId = userMsgId + 1;
+    const assistantMsg: Message = {
+      id: assistantMsgId,
+      role: 'assistant',
+      content: '',
+      created_at: new Date().toISOString(),
+    };
+
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      userMsg,
+      assistantMsg,
+    ]);
+    setMessage('');
     setSendingMessage(true);
     setLoadError(null);
 
     try {
-      const response = await sendChatMessage(
-        token,
-        conversationId,
-        trimmedMessage,
+      await sendStreamingMessage(token, conversationId, trimmedMessage, {
+        onChunk: (chunk: string) => {
+          if (activeConversationIdRef.current !== conversationId) return;
+          setMessages((currentMessages) =>
+            currentMessages.map((msg) =>
+              msg.id === assistantMsgId
+                ? { ...msg, content: msg.content + chunk }
+                : msg
+            )
+          );
+        },
+        onComplete: async () => {
+          setSendingMessage(false);
+          if (wasNewChat) {
+            const updatedConversations = await getConversations(token);
+            if (activeConversationIdRef.current === conversationId) {
+              setConversations(updatedConversations);
+            }
+          }
+        },
+        onError: (error: Error) => {
+          if (isAuthError(error)) {
+            clearToken();
+            router.replace('/login' as Route);
+            return;
+          }
+          setLoadError(
+            error instanceof Error ? error.message : 'Failed to send message',
+          );
+          setSendingMessage(false);
+        },
+      });
+    } catch (error) {
+      setSendingMessage(false);
+    }
+  }
+
+
+  const [isRegenerating, setIsRegenerating] = useState(false);
+
+  async function handleRegenerate(assistantMessageId: number) {
+    if (
+      activeConversationId === null ||
+      sendingMessage ||
+      isRegenerating ||
+      loadingMessages
+    ) {
+      return;
+    }
+
+    const token = getToken();
+    if (!token) {
+      router.replace('/login' as Route);
+      return;
+    }
+
+    setIsRegenerating(true);
+    setLoadError(null);
+
+    const previousContent = messages.find((m) => m.id === assistantMessageId)?.content;
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.id === assistantMessageId
+          ? { ...msg, content: '' }
+          : msg
+      )
+    );
+
+    try {
+      const regeneratedMsg = await regenerateMessage(token, assistantMessageId);
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantMessageId
+            ? regeneratedMsg
+            : msg
+        )
       );
-
-      if (activeConversationIdRef.current !== conversationId) {
-        return;
-      }
-
-      setMessages((currentMessages) => [
-        ...currentMessages,
-        response.user_message,
-        response.assistant_message,
-      ]);
-      setMessage('');
-
-      if (wasNewChat) {
-        const updatedConversations = await getConversations(token);
-
-        if (activeConversationIdRef.current === conversationId) {
-          setConversations(updatedConversations);
-        }
-      }
     } catch (error) {
       if (isAuthError(error)) {
         clearToken();
         router.replace('/login' as Route);
         return;
       }
-
       setLoadError(
-        error instanceof Error ? error.message : 'Failed to send message',
+        error instanceof Error ? error.message : 'Failed to regenerate response',
       );
+      if (previousContent) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantMessageId
+              ? { ...msg, content: previousContent }
+              : msg
+          )
+        );
+      }
     } finally {
-      setSendingMessage(false);
+      setIsRegenerating(false);
     }
   }
 
@@ -217,6 +305,7 @@ export default function MentorPage() {
     event.preventDefault();
     sendMessage();
   }
+
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -485,45 +574,79 @@ export default function MentorPage() {
 
                 {/* Messages */}
                 <div className="flex flex-col gap-5 pb-6">
-                  {messages.map((chatMessage) => (
-                    <div
-                      key={chatMessage.id}
-                      className={`flex ${
-                        chatMessage.role === 'user'
-                          ? 'justify-end'
-                          : 'justify-start'
-                      }`}
-                    >
+                  {messages.map((chatMessage) => {
+                    const isLatestAssistant =
+                      chatMessage.role === 'assistant' &&
+                      chatMessage.id ===
+                        [...messages]
+                          .reverse()
+                          .find((m) => m.role === 'assistant')?.id;
+
+                    return (
                       <div
-                        className={`flex max-w-[85%] gap-3 sm:max-w-[75%] ${
+                        key={chatMessage.id}
+                        className={`flex flex-col ${
                           chatMessage.role === 'user'
-                            ? 'flex-row-reverse'
-                            : ''
+                            ? 'items-end'
+                            : 'items-start'
                         }`}
                       >
                         <div
-                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold ${
-                            chatMessage.role === 'assistant'
-                              ? 'bg-gradient-to-br from-sky-400 to-cyan-500 text-slate-950 shadow-lg shadow-sky-500/20'
-                              : 'border border-white/[0.08] bg-white/[0.05] text-slate-300'
+                          className={`flex max-w-[85%] gap-3 sm:max-w-[75%] ${
+                            chatMessage.role === 'user'
+                              ? 'flex-row-reverse'
+                              : ''
                           }`}
                         >
-                          {chatMessage.role === 'assistant' ? 'TS' : 'Y'}
+                          <div
+                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold ${
+                              chatMessage.role === 'assistant'
+                                ? 'bg-gradient-to-br from-sky-400 to-cyan-500 text-slate-950 shadow-lg shadow-sky-500/20'
+                                : 'border border-white/[0.08] bg-white/[0.05] text-slate-300'
+                            }`}
+                          >
+                            {chatMessage.role === 'assistant' ? 'TS' : 'Y'}
+                          </div>
+
+                          <div
+                            className={`rounded-2xl px-4 py-3 text-sm leading-6 whitespace-pre-wrap ${
+                              chatMessage.role === 'assistant'
+                                ? 'rounded-tl-md border border-white/[0.07] bg-white/[0.035] text-slate-300'
+                                : 'rounded-tr-md bg-gradient-to-br from-sky-400 to-cyan-400 text-slate-950 shadow-lg shadow-sky-500/10'
+                            }`}
+                          >
+                            {chatMessage.content || (
+                              (sendingMessage && chatMessage.role === 'assistant') || (isRegenerating && isLatestAssistant) ? (
+                                <span className="inline-flex items-center gap-1.5 text-xs text-slate-400 italic">
+                                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-400" />
+                                  {isRegenerating ? 'Regenerating...' : 'Typing...'}
+                                </span>
+                              ) : null
+                            )}
+                          </div>
                         </div>
 
-                        <div
-                          className={`rounded-2xl px-4 py-3 text-sm leading-6 ${
-                            chatMessage.role === 'assistant'
-                              ? 'rounded-tl-md border border-white/[0.07] bg-white/[0.035] text-slate-300'
-                              : 'rounded-tr-md bg-gradient-to-br from-sky-400 to-cyan-400 text-slate-950 shadow-lg shadow-sky-500/10'
-                          }`}
-                        >
-                          {chatMessage.content}
-                        </div>
+                        {/* Regenerate Button */}
+                        {isLatestAssistant && !sendingMessage && (
+                          <div className="mt-1.5 ml-12 flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleRegenerate(chatMessage.id)}
+                              disabled={isRegenerating || sendingMessage}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-[11px] font-medium text-slate-400 transition hover:border-sky-400/30 hover:bg-sky-400/10 hover:text-sky-300 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <span className={`text-xs ${isRegenerating ? 'animate-spin' : ''}`}>↺</span>
+                              <span>{isRegenerating ? 'Regenerating...' : 'Regenerate'}</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
+                  <div ref={messagesEndRef} />
                 </div>
+
+
 
                 {sendingMessage && (
                   <p className="pb-2 text-sm text-slate-500">Thinking...</p>

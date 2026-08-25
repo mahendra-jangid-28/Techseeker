@@ -1,11 +1,15 @@
 # Dependencies
+node_modules/
 node_modules
 .pnpm-store
 
 # Next.js
+.next/
 .next
 out
+dist/
 dist
+coverage/
 coverage
 
 # Environment & Secrets
@@ -17,6 +21,7 @@ coverage
 
 # Python
 __pycache__/
+*.pyc
 *.py[cod]
 *$py.class
 .pytest_cache/
