@@ -16,6 +16,11 @@ from app.schemas.roadmap import (
     UserRoadmapDetailResponse,
 )
 from app.services.progress_service import award_xp
+from app.services.memory_service import (
+    normalize_topic_key,
+    upsert_user_memory,
+)
+
 
 DEFAULT_ROADMAPS_DATA = [
     {
@@ -264,6 +269,17 @@ def select_roadmap(db: Session, user_id: int, roadmap_id: int) -> UserRoadmapDet
     detail = get_user_roadmap(db, user_id)
     if not detail:
         raise HTTPException(status_code=500, detail="Failed to initialize user roadmap")
+
+    # Record durable learning goal
+    upsert_user_memory(
+        db,
+        user_id=user_id,
+        memory_key="selected_roadmap",
+        memory_value=f"Enrolled in {roadmap.title} roadmap ({roadmap.difficulty})",
+        memory_type="current_goal",
+        importance=3,
+    )
+
     return detail
 
 
@@ -334,7 +350,27 @@ def complete_module(db: Session, user_id: int, module_id: int) -> UserRoadmapDet
         xp_amount=25,
     )
 
+    # Record durable memory of completed module
+    norm_key = normalize_topic_key(module.title)
+    upsert_user_memory(
+        db,
+        user_id=user_id,
+        memory_key=f"completed_topic:{norm_key}",
+        memory_value=f"Completed module: {module.title}",
+        memory_type="completed_topic",
+        importance=2,
+    )
+    upsert_user_memory(
+        db,
+        user_id=user_id,
+        memory_key="recent_learning_context",
+        memory_value=f"Completed roadmap module: {module.title}",
+        memory_type="recent_learning_context",
+        importance=1,
+    )
+
     detail = get_user_roadmap(db, user_id)
     if not detail:
         raise HTTPException(status_code=500, detail="Failed to retrieve updated roadmap")
     return detail
+

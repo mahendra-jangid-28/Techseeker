@@ -34,3 +34,19 @@ class User(Base):
         cascade="all, delete-orphan",
         order_by="desc(UserActivity.created_at)",
     )
+    memories = relationship(
+        "UserMemory",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    weak_topics = relationship(
+        "WeakTopic",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    recommendations = relationship(
+        "StudyRecommendation",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        order_by="StudyRecommendation.priority",
+    )

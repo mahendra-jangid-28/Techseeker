@@ -25,11 +25,14 @@ class MessageResponse(BaseModel):
     id: int
     role: str
     content: str
+    is_current: bool = True
+    parent_message_id: int | None = None
     created_at: datetime
 
     model_config = {
         "from_attributes": True,
     }
+
 
 
 class ConversationDetailResponse(BaseModel):
@@ -51,3 +54,6 @@ class ChatResponse(BaseModel):
     assistant_message: MessageResponse
 
     model_config = ConfigDict(from_attributes=True)
+
+
+ChatMessageCreate = MessageCreate

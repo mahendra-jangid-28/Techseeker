@@ -24,6 +24,12 @@ from app.schemas.lesson import (
 from app.schemas.playground import CodeExecutionRequest
 from app.services.runner_service import execute_code_via_runner
 from app.services.progress_service import award_xp
+from app.services.memory_service import (
+    normalize_topic_key,
+    record_topic_attempt,
+    upsert_user_memory,
+)
+
 
 
 def generate_default_lesson_content(module: RoadmapModule) -> Dict[str, Any]:
@@ -203,6 +209,14 @@ async def submit_lesson_code(
     db.add(submission)
     db.commit()
 
+    # Track deterministic weak topic state
+    record_topic_attempt(
+        db,
+        user_id=user_id,
+        topic=lesson.title,
+        passed=passed,
+    )
+
     if passed:
         # Award +30 XP for passing interactive coding challenge
         award_xp(
@@ -211,6 +225,32 @@ async def submit_lesson_code(
             activity_type="interactive_challenge_passed",
             activity_title=f"Solved Challenge: {lesson.title}",
             xp_amount=30,
+        )
+        norm_key = normalize_topic_key(lesson.title)
+        upsert_user_memory(
+            db,
+            user_id=user_id,
+            memory_key=f"completed_topic:{norm_key}",
+            memory_value=f"Mastered challenge: {lesson.title}",
+            memory_type="completed_topic",
+            importance=2,
+        )
+        upsert_user_memory(
+            db,
+            user_id=user_id,
+            memory_key="recent_learning_context",
+            memory_value=f"Practiced coding challenge for {lesson.title}",
+            memory_type="recent_learning_context",
+            importance=1,
+        )
+    else:
+        upsert_user_memory(
+            db,
+            user_id=user_id,
+            memory_key="recent_learning_context",
+            memory_value=f"Working on coding challenge for {lesson.title}",
+            memory_type="recent_learning_context",
+            importance=1,
         )
 
     return LessonSubmitResponse(
@@ -260,6 +300,14 @@ def submit_lesson_quiz(
     percentage = round((correct_count / total_questions) * 100) if total_questions > 0 else 0
     passed = percentage >= 60
 
+    # Track deterministic weak topic state
+    record_topic_attempt(
+        db,
+        user_id=user_id,
+        topic=lesson.title,
+        passed=passed,
+    )
+
     if passed:
         award_xp(
             db,
@@ -267,6 +315,32 @@ def submit_lesson_quiz(
             activity_type="quiz_completed",
             activity_title=f"Passed Quiz: {lesson.title}",
             xp_amount=20,
+        )
+        norm_key = normalize_topic_key(lesson.title)
+        upsert_user_memory(
+            db,
+            user_id=user_id,
+            memory_key=f"completed_topic:{norm_key}",
+            memory_value=f"Passed quiz: {lesson.title}",
+            memory_type="completed_topic",
+            importance=2,
+        )
+        upsert_user_memory(
+            db,
+            user_id=user_id,
+            memory_key="recent_learning_context",
+            memory_value=f"Passed quiz on {lesson.title} ({percentage}%)",
+            memory_type="recent_learning_context",
+            importance=1,
+        )
+    else:
+        upsert_user_memory(
+            db,
+            user_id=user_id,
+            memory_key="recent_learning_context",
+            memory_value=f"Attempted quiz on {lesson.title} ({percentage}%)",
+            memory_type="recent_learning_context",
+            importance=1,
         )
 
     summary = (
@@ -283,3 +357,4 @@ def submit_lesson_quiz(
         results=results,
         summary_explanation=summary,
     )
+

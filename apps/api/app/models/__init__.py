@@ -14,6 +14,9 @@ from app.models.lesson import (
     LessonModule,
     LessonSubmission,
 )
+from app.models.user_memory import UserMemory
+from app.models.weak_topic import WeakTopic
+from app.models.study_recommendation import StudyRecommendation
 
 __all__ = [
     "User",
@@ -28,4 +31,7 @@ __all__ = [
     "UserRoadmapSelection",
     "LessonModule",
     "LessonSubmission",
+    "UserMemory",
+    "WeakTopic",
+    "StudyRecommendation",
 ]
