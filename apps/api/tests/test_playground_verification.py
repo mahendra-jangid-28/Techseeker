@@ -1,7 +1,10 @@
-import httpx
+import sys
+sys.path.insert(0, ".")
+from fastapi.testclient import TestClient
+from app.main import app
 
 def test_playground_runner():
-    client = httpx.Client(base_url="http://127.0.0.1:8000", timeout=10.0)
+    client = TestClient(app)
 
     # 1. Test basic code execution
     payload1 = {

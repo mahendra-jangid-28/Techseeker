@@ -69,8 +69,8 @@ def generate_default_lesson_content(module: RoadmapModule) -> Dict[str, Any]:
                 "id": 1,
                 "question": "How do you declare and assign a variable in Python?",
                 "options": [
-                    "var x = 10;",
                     "x = 10",
+                    "var x = 10;",
                     "int x := 10;",
                     "declare x as 10",
                 ],
@@ -82,8 +82,8 @@ def generate_default_lesson_content(module: RoadmapModule) -> Dict[str, Any]:
                 "question": "Which of the following is a valid Python variable name?",
                 "options": [
                     "2nd_user",
-                    "user_name",
                     "user-name",
+                    "user_name",
                     "class",
                 ],
                 "answer": "user_name",
@@ -94,9 +94,9 @@ def generate_default_lesson_content(module: RoadmapModule) -> Dict[str, Any]:
                 "question": "What happens when you reassign an existing variable to a new value in Python?",
                 "options": [
                     "It raises a TypeError.",
-                    "The variable now references the new value.",
                     "The previous value is permanently locked in memory.",
                     "Python creates a duplicate pointer with a warning.",
+                    "The variable now references the new value.",
                 ],
                 "answer": "The variable now references the new value.",
                 "explanation": "Python variables are dynamic references. Reassigning a variable simply points the identifier to the new object in memory.",

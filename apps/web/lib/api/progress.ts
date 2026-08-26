@@ -9,6 +9,14 @@ export interface ContinueLearningItem {
 export interface DailyActivity {
   day: string;
   minutes: number;
+  activities_count?: number;
+}
+
+export interface HeatmapDay {
+  date: string;
+  day: string;
+  count: number;
+  level: number;
 }
 
 export interface RecentActivityItem {
@@ -24,8 +32,16 @@ export interface UserProgressResponse {
   xp: number;
   level: number;
   streak: number;
+  lessons_completed: number;
+  roadmap_progress_percentage: number;
+  quizzes_completed: number;
+  challenges_passed: number;
+  active_weak_topics_count: number;
+  resolved_topics_count: number;
   continue_learning: ContinueLearningItem | null;
   weekly_activity: DailyActivity[];
+  heatmap: number[][];
+  heatmap_days: HeatmapDay[];
   recent_activity: RecentActivityItem[];
 }
 

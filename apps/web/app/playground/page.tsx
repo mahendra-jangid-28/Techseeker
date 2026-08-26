@@ -18,6 +18,9 @@ export default function PlaygroundPage() {
 
   const consoleEndRef = useRef<HTMLDivElement | null>(null);
 
+  // Proactive check if the Python code requires input
+  const requiresStdin = language === 'python' && /\binput\s*\(/.test(code);
+
   // Auto-scroll console on execution
   useEffect(() => {
     if (executionResult) {
@@ -27,6 +30,11 @@ export default function PlaygroundPage() {
 
   async function handleRunCode() {
     if (isLoading) return;
+
+    // If code calls input() and no STDIN is entered, auto-open the STDIN panel to guide the user
+    if (requiresStdin && !stdin.trim() && !isStdinOpen) {
+      setIsStdinOpen(true);
+    }
 
     setIsLoading(true);
     try {
@@ -77,7 +85,7 @@ export default function PlaygroundPage() {
     <main
       onKeyDown={handleKeyDown}
       tabIndex={0}
-      className="flex min-h-screen flex-col bg-[#1e1e1e] text-slate-200 outline-none"
+      className="flex h-full w-full flex-col bg-[#1e1e1e] text-slate-200 outline-none overflow-hidden"
     >
       {/* Top VS Code App Bar */}
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.08] bg-[#181818] px-4">
@@ -174,18 +182,29 @@ export default function PlaygroundPage() {
               <span>main.py</span>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setIsStdinOpen((prev) => !prev)}
-              className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition ${
-                isStdinOpen
-                  ? 'bg-sky-500/20 text-sky-300'
-                  : 'text-slate-400 hover:bg-white/[0.05] hover:text-slate-200'
-              }`}
-            >
-              <span>⌨</span>
-              <span>STDIN Input {isStdinOpen ? '▲' : '▼'}</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {requiresStdin && (
+                <span className="flex items-center gap-1 rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-300">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
+                  input() detected
+                </span>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setIsStdinOpen((prev) => !prev)}
+                className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition ${
+                  isStdinOpen
+                    ? 'bg-sky-500/20 text-sky-300'
+                    : requiresStdin && !stdin.trim()
+                    ? 'border border-amber-400/40 bg-amber-500/10 text-amber-300'
+                    : 'text-slate-400 hover:bg-white/[0.05] hover:text-slate-200'
+                }`}
+              >
+                <span>⌨</span>
+                <span>STDIN Input {isStdinOpen ? '▲' : '▼'}</span>
+              </button>
+            </div>
           </div>
 
           {/* Collapsible STDIN Pane */}
@@ -195,12 +214,16 @@ export default function PlaygroundPage() {
                 <span className="font-semibold uppercase tracking-wider text-slate-300">
                   Standard Input (STDIN)
                 </span>
-                <span className="text-slate-500">Passed to input() during execution</span>
+                <span className="text-slate-500">
+                  {requiresStdin
+                    ? 'Provide input lines here before clicking Run'
+                    : 'Passed to input() during execution'}
+                </span>
               </div>
               <textarea
                 value={stdin}
                 onChange={(e) => setStdin(e.target.value)}
-                placeholder="Enter standard input lines here..."
+                placeholder="Enter standard input lines here (one line per input() call)..."
                 rows={3}
                 className="w-full resize-y rounded-md border border-white/[0.1] bg-[#1e1e1e] p-2 font-mono text-xs text-slate-200 outline-none focus:border-sky-500"
               />
@@ -303,9 +326,28 @@ export default function PlaygroundPage() {
               )
             ) : (
               executionResult.stderr ? (
-                <pre className="whitespace-pre-wrap text-rose-400">
-                  {executionResult.stderr}
-                </pre>
+                <div className="space-y-3">
+                  {executionResult.stderr.includes('EOFError') && (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 font-sans text-xs text-amber-200">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold">💡 Standard Input Needed</span>
+                        <button
+                          type="button"
+                          onClick={() => setIsStdinOpen(true)}
+                          className="rounded bg-amber-500/20 px-2 py-1 text-[11px] font-medium text-amber-300 hover:bg-amber-500/30"
+                        >
+                          Open STDIN Drawer ↑
+                        </button>
+                      </div>
+                      <p className="mt-1 text-[11px] text-amber-300/80">
+                        In this sandboxed batch environment, interactive prompts like <code className="font-mono bg-black/30 px-1 rounded">input()</code> read lines from the STDIN panel.
+                      </p>
+                    </div>
+                  )}
+                  <pre className="whitespace-pre-wrap text-rose-400">
+                    {executionResult.stderr}
+                  </pre>
+                </div>
               ) : (
                 <div className="italic text-slate-500">(No errors or stderr output)</div>
               )

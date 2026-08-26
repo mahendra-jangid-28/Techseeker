@@ -174,95 +174,10 @@ def get_active_weak_topics(db: Session, user_id: int) -> List[WeakTopic]:
 
 def build_personalized_mentor_context(db: Session, user_id: int) -> str:
     """
-    Constructs a concise, bounded personalized learning context for the AI Mentor.
-    Reuses existing database models without dumping full history.
+    Constructs a concise, bounded personalized learning context for the AI Mentor
+    powered by the unified Learner Intelligence Snapshot.
     """
-    context_lines = []
+    from app.services.learner_intelligence_service import get_learner_snapshot, format_mentor_learner_context
 
-    # 1. Selected Roadmap
-    selection = (
-        db.query(UserRoadmapSelection)
-        .filter(UserRoadmapSelection.user_id == user_id)
-        .first()
-    )
-    if selection:
-        roadmap = db.query(Roadmap).filter(Roadmap.id == selection.roadmap_id).first()
-        if roadmap:
-            context_lines.append(f"Current Career Goal / Roadmap: {roadmap.title} ({roadmap.difficulty} level)")
-
-    # 2. Completed Topics / Milestones
-    completed_memories = (
-        db.query(UserMemory)
-        .filter(
-            UserMemory.user_id == user_id,
-            UserMemory.memory_type == "completed_topic",
-        )
-        .order_by(desc(UserMemory.updated_at))
-        .limit(4)
-        .all()
-    )
-    if completed_memories:
-        completed_titles = [m.memory_value for m in completed_memories]
-        context_lines.append(f"Mastered / Completed: {', '.join(completed_titles)}")
-
-    # 3. Active Weak Topics (Need simpler explanations & step-by-step guidance)
-    active_weak = (
-        db.query(WeakTopic)
-        .filter(
-            WeakTopic.user_id == user_id,
-            WeakTopic.status == "active",
-        )
-        .limit(3)
-        .all()
-    )
-    if active_weak:
-        weak_names = [w.topic for w in active_weak]
-        context_lines.append(
-            f"Active Weak Topics (User struggles here - give simpler steps, analogies, and small examples): {', '.join(weak_names)}"
-        )
-
-    # 4. Improving Topics
-    improving = (
-        db.query(WeakTopic)
-        .filter(
-            WeakTopic.user_id == user_id,
-            WeakTopic.status == "improving",
-        )
-        .limit(2)
-        .all()
-    )
-    if improving:
-        improving_names = [w.topic for w in improving]
-        context_lines.append(f"Recently Improving Topics: {', '.join(improving_names)}")
-
-    # 5. Recent Learning Context
-    recent_memory = (
-        db.query(UserMemory)
-        .filter(
-            UserMemory.user_id == user_id,
-            UserMemory.memory_type == "recent_learning_context",
-        )
-        .order_by(desc(UserMemory.updated_at))
-        .first()
-    )
-    if recent_memory:
-        context_lines.append(f"Latest Learning Activity: {recent_memory.memory_value}")
-
-    # 6. Preferences
-    preferences = (
-        db.query(UserMemory)
-        .filter(
-            UserMemory.user_id == user_id,
-            UserMemory.memory_type == "learning_preference",
-        )
-        .limit(2)
-        .all()
-    )
-    if preferences:
-        pref_vals = [p.memory_value for p in preferences]
-        context_lines.append(f"Preferences: {', '.join(pref_vals)}")
-
-    if not context_lines:
-        return ""
-
-    return "\n".join(context_lines)
+    snapshot = get_learner_snapshot(db, user_id)
+    return format_mentor_learner_context(snapshot)

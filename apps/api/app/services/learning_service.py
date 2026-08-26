@@ -1,4 +1,4 @@
-﻿import json
+import json
 
 from fastapi import HTTPException, status
 from pydantic import ValidationError
@@ -112,7 +112,8 @@ Rules:
 6. If the topic is not programming-related, set "code" to null where code is not useful.
 7. For non-programming topics, use "syntax_or_core_concepts" to explain the important concepts.
 8. Do not invent fake sources or references.
-9. Keep the content educational, practical, and accurate.
+9. Randomize the position of the correct answer across the 4 options (do not always place the correct answer in Option B).
+10. Keep the content educational, practical, and accurate.
 """
 
 

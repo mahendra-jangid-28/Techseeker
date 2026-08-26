@@ -1,12 +1,14 @@
 import math
 from datetime import datetime, timezone, timedelta
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.models.user import User
 from app.models.user_progress import UserProgress
 from app.models.user_activity import UserActivity
+from app.models.user_memory import UserMemory
+from app.models.weak_topic import WeakTopic
 from app.models.conversation import Conversation
 from app.models.project import Project
 from app.models.roadmap import (
@@ -18,9 +20,19 @@ from app.models.roadmap import (
 from app.schemas.progress import (
     ContinueLearningItem,
     DailyActivity,
+    HeatmapDay,
     RecentActivityItem,
     UserProgressResponse,
 )
+
+MEANINGFUL_ACTIVITY_TYPES = [
+    "lesson_completed",
+    "quiz_completed",
+    "interactive_challenge_passed",
+    "roadmap_module_completed",
+    "learned_topic",
+    "project_saved",
+]
 
 
 def calculate_level(xp: int) -> int:
@@ -163,6 +175,102 @@ def get_continue_learning(db: Session, user_id: int) -> Optional[ContinueLearnin
     return None
 
 
+def get_real_learning_metrics(db: Session, user_id: int) -> dict:
+    """
+    Computes all verified metrics directly from database records without hardcoded values.
+    """
+    # 1. Lessons & Modules completed
+    completed_modules_count = (
+        db.query(UserRoadmapProgress)
+        .filter(
+            UserRoadmapProgress.user_id == user_id,
+            UserRoadmapProgress.status == "completed",
+        )
+        .count()
+    )
+    completed_topics_count = (
+        db.query(UserMemory)
+        .filter(
+            UserMemory.user_id == user_id,
+            UserMemory.memory_type == "completed_topic",
+        )
+        .count()
+    )
+    lessons_completed = max(completed_modules_count, completed_topics_count)
+
+    # 2. Roadmap progress percentage
+    selection = (
+        db.query(UserRoadmapSelection)
+        .filter(UserRoadmapSelection.user_id == user_id)
+        .first()
+    )
+    roadmap_progress_percentage = 0
+    if selection:
+        total_modules = (
+            db.query(RoadmapModule)
+            .filter(RoadmapModule.roadmap_id == selection.roadmap_id)
+            .count()
+        )
+        if total_modules > 0:
+            completed_in_roadmap = (
+                db.query(UserRoadmapProgress)
+                .filter(
+                    UserRoadmapProgress.user_id == user_id,
+                    UserRoadmapProgress.roadmap_id == selection.roadmap_id,
+                    UserRoadmapProgress.status == "completed",
+                )
+                .count()
+            )
+            roadmap_progress_percentage = round((completed_in_roadmap / total_modules) * 100)
+
+    # 3. Quizzes completed
+    quizzes_completed = (
+        db.query(UserActivity)
+        .filter(
+            UserActivity.user_id == user_id,
+            UserActivity.activity_type == "quiz_completed",
+        )
+        .count()
+    )
+
+    # 4. Challenges passed
+    challenges_passed = (
+        db.query(UserActivity)
+        .filter(
+            UserActivity.user_id == user_id,
+            UserActivity.activity_type == "interactive_challenge_passed",
+        )
+        .count()
+    )
+
+    # 5. Weak and resolved topics
+    active_weak_topics_count = (
+        db.query(WeakTopic)
+        .filter(
+            WeakTopic.user_id == user_id,
+            WeakTopic.status == "active",
+        )
+        .count()
+    )
+    resolved_topics_count = (
+        db.query(WeakTopic)
+        .filter(
+            WeakTopic.user_id == user_id,
+            WeakTopic.status == "resolved",
+        )
+        .count()
+    )
+
+    return {
+        "lessons_completed": lessons_completed,
+        "roadmap_progress_percentage": roadmap_progress_percentage,
+        "quizzes_completed": quizzes_completed,
+        "challenges_passed": challenges_passed,
+        "active_weak_topics_count": active_weak_topics_count,
+        "resolved_topics_count": resolved_topics_count,
+    }
+
+
 def get_weekly_activity(db: Session, user_id: int) -> List[DailyActivity]:
     now = datetime.now(timezone.utc)
     day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -174,22 +282,83 @@ def get_weekly_activity(db: Session, user_id: int) -> List[DailyActivity]:
         target_date = (now - timedelta(days=i)).date()
         day_str = day_names[target_date.weekday()]
 
-        # Query activities on that date
+        # Query meaningful activities on that date
         activities_count = (
             db.query(UserActivity)
             .filter(
                 UserActivity.user_id == user_id,
+                UserActivity.activity_type.in_(MEANINGFUL_ACTIVITY_TYPES),
                 UserActivity.created_at >= datetime(target_date.year, target_date.month, target_date.day, 0, 0, 0, tzinfo=timezone.utc),
                 UserActivity.created_at <= datetime(target_date.year, target_date.month, target_date.day, 23, 59, 59, tzinfo=timezone.utc),
             )
             .count()
         )
         
-        # Calculate active minutes based on actions count
+        # Calculate active minutes based on meaningful actions count
         minutes = min(120, activities_count * 20)
-        weekly.append(DailyActivity(day=day_str, minutes=minutes))
+        weekly.append(
+            DailyActivity(
+                day=day_str,
+                minutes=minutes,
+                activities_count=activities_count,
+            )
+        )
 
     return weekly
+
+
+def get_activity_heatmap(db: Session, user_id: int) -> Tuple[List[List[int]], List[HeatmapDay]]:
+    """
+    Generates 35-day (5 weeks x 7 days) heatmap from meaningful learning events only.
+    Excludes raw AI chat message counts to avoid metric inflation.
+    """
+    now = datetime.now(timezone.utc)
+    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    
+    days_flat: List[HeatmapDay] = []
+    
+    # 35 days leading up to today
+    for i in range(34, -1, -1):
+        target_date = (now - timedelta(days=i)).date()
+        day_str = day_names[target_date.weekday()]
+        
+        count = (
+            db.query(UserActivity)
+            .filter(
+                UserActivity.user_id == user_id,
+                UserActivity.activity_type.in_(MEANINGFUL_ACTIVITY_TYPES),
+                UserActivity.created_at >= datetime(target_date.year, target_date.month, target_date.day, 0, 0, 0, tzinfo=timezone.utc),
+                UserActivity.created_at <= datetime(target_date.year, target_date.month, target_date.day, 23, 59, 59, tzinfo=timezone.utc),
+            )
+            .count()
+        )
+        
+        # Map count to intensity level (0 to 3)
+        if count == 0:
+            level = 0
+        elif count == 1:
+            level = 1
+        elif count <= 3:
+            level = 2
+        else:
+            level = 3
+            
+        days_flat.append(
+            HeatmapDay(
+                date=target_date.strftime("%Y-%m-%d"),
+                day=day_str,
+                count=count,
+                level=level,
+            )
+        )
+        
+    # Group into 5 weeks of 7 days (matrix of intensity levels)
+    matrix_5x7: List[List[int]] = []
+    for w in range(5):
+        week_slice = days_flat[w * 7 : (w + 1) * 7]
+        matrix_5x7.append([d.level for d in week_slice])
+        
+    return matrix_5x7, days_flat
 
 
 def get_recent_activity(db: Session, user_id: int, limit: int = 5) -> List[RecentActivityItem]:
@@ -216,7 +385,9 @@ def get_user_progress_overview(db: Session, user: User) -> UserProgressResponse:
     progress = get_or_create_progress(db, user.id)
     level = calculate_level(progress.xp)
     continue_learning = get_continue_learning(db, user.id)
+    metrics = get_real_learning_metrics(db, user.id)
     weekly_activity = get_weekly_activity(db, user.id)
+    heatmap_matrix, heatmap_days = get_activity_heatmap(db, user.id)
     recent_activity = get_recent_activity(db, user.id)
 
     # Use first name for greeting if available
@@ -227,7 +398,15 @@ def get_user_progress_overview(db: Session, user: User) -> UserProgressResponse:
         xp=progress.xp,
         level=level,
         streak=progress.streak,
+        lessons_completed=metrics["lessons_completed"],
+        roadmap_progress_percentage=metrics["roadmap_progress_percentage"],
+        quizzes_completed=metrics["quizzes_completed"],
+        challenges_passed=metrics["challenges_passed"],
+        active_weak_topics_count=metrics["active_weak_topics_count"],
+        resolved_topics_count=metrics["resolved_topics_count"],
         continue_learning=continue_learning,
         weekly_activity=weekly_activity,
+        heatmap=heatmap_matrix,
+        heatmap_days=heatmap_days,
         recent_activity=recent_activity,
     )

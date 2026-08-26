@@ -38,6 +38,7 @@ function LearnContent() {
 
   // Quiz states
   const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
+  const [shuffledOptions, setShuffledOptions] = useState<Record<number, string[]>>({});
   const [isSubmittingQuiz, setIsSubmittingQuiz] = useState(false);
   const [quizResult, setQuizResult] = useState<QuizSubmitResult | null>(null);
 
@@ -72,7 +73,21 @@ function LearnContent() {
         const lessonData = await getLesson(finalModuleId, token || undefined);
 
         setLesson(lessonData);
-        setCode(lessonData.content.interactive_practice.starter_code);
+        setCode(lessonData.content.interactive_practice?.starter_code || '');
+
+        // Shuffle quiz options ONCE per session upon loading lesson
+        if (lessonData.content?.quiz) {
+          const optionMap: Record<number, string[]> = {};
+          lessonData.content.quiz.forEach((q) => {
+            const arr = [...q.options];
+            for (let i = arr.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            optionMap[q.id] = arr;
+          });
+          setShuffledOptions(optionMap);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load lesson curriculum');
       } finally {
@@ -255,203 +270,240 @@ function LearnContent() {
           </div>
         </section>
 
-        {/* 3. SYNTAX & EXAMPLES */}
-        <section className="rounded-3xl border border-white/[0.08] bg-slate-950/70 p-6 backdrop-blur-xl space-y-6">
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-sky-400">
-              Syntax Guide
-            </span>
-            <h2 className="mt-1 text-xl font-bold text-white">Code Anatomy & Patterns</h2>
-            <div className="mt-3 rounded-xl border border-white/[0.08] bg-black/40 p-4 font-mono text-xs text-slate-300 overflow-x-auto">
-              <pre>{content.syntax}</pre>
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2 pt-2">
-            {content.examples.map((ex, idx) => (
-              <div key={idx} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
-                <h3 className="text-sm font-bold text-sky-300">{ex.title}</h3>
-                <p className="mt-1 text-xs text-slate-400">{ex.explanation}</p>
-                <div className="mt-3 rounded-xl border border-white/[0.06] bg-black/50 p-3 font-mono text-xs text-slate-200 overflow-x-auto">
-                  <pre>{ex.code}</pre>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* 4. INTERACTIVE PRACTICE & EMBEDDED MONACO CODE RUNNER */}
-        <section className="rounded-3xl border border-sky-500/20 bg-slate-950/80 p-6 shadow-2xl backdrop-blur-xl sm:p-8 space-y-6">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-2.5 py-0.5 text-[10px] font-bold uppercase text-sky-400">
-                Interactive Challenge
-              </span>
-              <h2 className="mt-2 text-xl font-bold text-white">Write & Run Your Code</h2>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setCode(content.interactive_practice.starter_code)}
-                className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-slate-400 hover:text-white transition"
-              >
-                Reset Starter Code ↺
-              </button>
-            </div>
-          </div>
-
-          {/* Prompt card */}
-          <div className="rounded-2xl border border-sky-400/10 bg-sky-500/[0.05] p-4">
-            <p className="text-xs leading-relaxed text-slate-200">
-              <strong className="text-sky-300">Prompt: </strong>
-              {content.interactive_practice.prompt}
-            </p>
-            <div className="mt-2 text-xs font-mono text-slate-400">
-              <strong className="text-slate-300">Expected Output: </strong>
-              <span className="text-emerald-400 font-semibold">{content.interactive_practice.expected_output}</span>
-            </div>
-          </div>
-
-          {/* Monaco Editor Container */}
-          <div className="overflow-hidden rounded-2xl border border-white/[0.1] bg-[#1e1e1e] shadow-xl">
-            <div className="flex items-center justify-between border-b border-white/[0.08] bg-[#252526] px-4 py-2 text-xs">
-              <span className="font-mono text-slate-400">
-                solution.{content.interactive_practice.language === 'python' ? 'py' : 'js'}
-              </span>
-              <span className="text-[11px] text-slate-500">Auto-validating code runner</span>
-            </div>
-            <Editor
-              height="280px"
-              language={content.interactive_practice.language || 'python'}
-              theme="vs-dark"
-              value={code}
-              onChange={(val) => setCode(val || '')}
-              options={{
-                fontSize: 13,
-                minimap: { enabled: false },
-                scrollBeyondLastLine: false,
-                lineNumbers: 'on',
-                fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-              }}
-            />
-          </div>
-
-          {/* Run Code Control & Console Output */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <button
-                type="button"
-                disabled={isExecuting}
-                onClick={handleRunCode}
-                className="flex items-center gap-2 rounded-xl bg-gradient-to-br from-sky-400 to-cyan-400 px-6 py-2.5 text-xs font-bold text-slate-950 shadow-lg shadow-sky-500/20 transition-all duration-200 hover:opacity-90 disabled:opacity-50"
-              >
-                <span>{isExecuting ? 'Running & Validating...' : '▶ Run & Validate Code'}</span>
-              </button>
-
-              {execResult?.passed && (
-                <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-bold text-emerald-400">
-                  Challenge Solved ✓ (+30 XP)
+        {/* 3. SYNTAX & EXAMPLES (Rendered if syntax/examples are provided) */}
+        {(content.syntax || (content.examples && content.examples.length > 0)) && (
+          <section className="rounded-3xl border border-white/[0.08] bg-slate-950/70 p-6 backdrop-blur-xl space-y-6">
+            {content.syntax && (
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-sky-400">
+                  Syntax Guide
                 </span>
-              )}
-            </div>
-
-            {/* Console Output Box */}
-            {execResult && (
-              <div
-                className={`rounded-2xl border p-4 font-mono text-xs transition-all ${
-                  execResult.passed
-                    ? 'border-emerald-500/30 bg-emerald-950/20 text-emerald-300'
-                    : 'border-red-500/30 bg-red-950/20 text-red-300'
-                }`}
-              >
-                <div className="flex items-center justify-between pb-2 border-b border-white/[0.08]">
-                  <span className="font-bold">
-                    {execResult.passed ? '✓ Output Passed (100/100)' : '✗ Output Mismatch (0/100)'}
-                  </span>
-                  <span className="text-[10px] opacity-70">
-                    {execResult.passed ? 'All test conditions met' : 'Inspect feedback below'}
-                  </span>
-                </div>
-
-                <div className="mt-3 space-y-2">
-                  <p className="font-sans text-xs">{execResult.feedback}</p>
-                  <div>
-                    <span className="text-slate-400">Actual Output: </span>
-                    <pre className="mt-1 rounded bg-black/40 p-2 text-white overflow-x-auto">
-                      {execResult.actual_output || '(no stdout produced)'}
-                    </pre>
-                  </div>
-                  {execResult.error && (
-                    <div>
-                      <span className="text-red-400">Error: </span>
-                      <pre className="mt-1 rounded bg-black/40 p-2 text-red-300 overflow-x-auto">
-                        {execResult.error}
-                      </pre>
-                    </div>
-                  )}
+                <h2 className="mt-1 text-xl font-bold text-white">Code Anatomy & Patterns</h2>
+                <div className="mt-3 rounded-xl border border-white/[0.08] bg-black/40 p-4 font-mono text-xs text-slate-300 overflow-x-auto">
+                  <pre>{content.syntax}</pre>
                 </div>
               </div>
             )}
-          </div>
 
-          {/* 5. PROGRESSIVE AI HINT LADDER */}
-          <div className="pt-4 border-t border-white/[0.08] space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-white">Progressive AI Hint Ladder</h3>
-                <p className="text-[11px] text-slate-400">
-                  Unlock progressive clues without spoiling the solution immediately.
-                </p>
+            {content.examples && content.examples.length > 0 && (
+              <div className="grid gap-4 md:grid-cols-2 pt-2">
+                {content.examples.map((ex, idx) => (
+                  <div key={idx} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+                    <h3 className="text-sm font-bold text-sky-300">{ex.title}</h3>
+                    <p className="mt-1 text-xs text-slate-400">{ex.explanation}</p>
+                    {ex.code && (
+                      <div className="mt-3 rounded-xl border border-white/[0.06] bg-black/50 p-3 font-mono text-xs text-slate-200 overflow-x-auto">
+                        <pre>{ex.code}</pre>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* 4. INTERACTIVE PRACTICE (Content-Aware: Monaco Runner for Code, Reflection for Concepts) */}
+        {content.interactive_practice && (
+          Boolean(content.interactive_practice.starter_code?.trim() || content.interactive_practice.expected_output?.trim()) ? (
+            /* Coding Challenge Layout */
+            <section className="rounded-3xl border border-sky-500/20 bg-slate-950/80 p-6 shadow-2xl backdrop-blur-xl sm:p-8 space-y-6">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-2.5 py-0.5 text-[10px] font-bold uppercase text-sky-400">
+                    Interactive Challenge
+                  </span>
+                  <h2 className="mt-2 text-xl font-bold text-white">Write & Run Your Code</h2>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCode(content.interactive_practice.starter_code)}
+                    className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-slate-400 hover:text-white transition"
+                  >
+                    Reset Starter Code ↺
+                  </button>
+                </div>
               </div>
 
-              {revealedHintLevel < 4 && (
-                <button
-                  type="button"
-                  onClick={unlockNextHint}
-                  className="rounded-xl border border-sky-400/30 bg-sky-400/10 px-3.5 py-1.5 text-xs font-semibold text-sky-300 hover:bg-sky-400/20 transition"
-                >
-                  {revealedHintLevel === 0
-                    ? '💡 Reveal Hint 1 (Direction)'
-                    : revealedHintLevel === 1
-                    ? '💡 Reveal Hint 2 (Logic)'
-                    : revealedHintLevel === 2
-                    ? '💡 Reveal Hint 3 (Partial Code)'
-                    : '🔓 Reveal Final Solution'}
-                </button>
-              )}
-            </div>
+              {/* Prompt card */}
+              <div className="rounded-2xl border border-sky-400/10 bg-sky-500/[0.05] p-4">
+                <p className="text-xs leading-relaxed text-slate-200">
+                  <strong className="text-sky-300">Prompt: </strong>
+                  {content.interactive_practice.prompt}
+                </p>
+                {content.interactive_practice.expected_output && (
+                  <div className="mt-2 text-xs font-mono text-slate-400">
+                    <strong className="text-slate-300">Expected Output: </strong>
+                    <span className="text-emerald-400 font-semibold">{content.interactive_practice.expected_output}</span>
+                  </div>
+                )}
+              </div>
 
-            <div className="space-y-2.5">
-              {revealedHintLevel >= 1 && (
-                <div className="rounded-xl border border-sky-400/20 bg-sky-400/[0.05] p-3.5 text-xs">
-                  <span className="font-bold text-sky-300">Hint 1 (Direction): </span>
-                  <span className="text-slate-300">{content.hints.hint_1}</span>
+              {/* Monaco Editor Container */}
+              <div className="overflow-hidden rounded-2xl border border-white/[0.1] bg-[#1e1e1e] shadow-xl">
+                <div className="flex items-center justify-between border-b border-white/[0.08] bg-[#252526] px-4 py-2 text-xs">
+                  <span className="font-mono text-slate-400">
+                    solution.{content.interactive_practice.language === 'python' ? 'py' : 'js'}
+                  </span>
+                  <span className="text-[11px] text-slate-500">Auto-validating code runner</span>
+                </div>
+                <Editor
+                  height="280px"
+                  language={content.interactive_practice.language || 'python'}
+                  theme="vs-dark"
+                  value={code}
+                  onChange={(val) => setCode(val || '')}
+                  options={{
+                    fontSize: 13,
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    lineNumbers: 'on',
+                    fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+                  }}
+                />
+              </div>
+
+              {/* Run Code Control & Console Output */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    disabled={isExecuting}
+                    onClick={handleRunCode}
+                    className="flex items-center gap-2 rounded-xl bg-gradient-to-br from-sky-400 to-cyan-400 px-6 py-2.5 text-xs font-bold text-slate-950 shadow-lg shadow-sky-500/20 transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+                  >
+                    <span>{isExecuting ? 'Running & Validating...' : '▶ Run & Validate Code'}</span>
+                  </button>
+
+                  {execResult?.passed && (
+                    <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-bold text-emerald-400">
+                      Challenge Solved ✓ (+30 XP)
+                    </span>
+                  )}
+                </div>
+
+                {/* Console Output Box */}
+                {execResult && (
+                  <div
+                    className={`rounded-2xl border p-4 font-mono text-xs transition-all ${
+                      execResult.passed
+                        ? 'border-emerald-500/30 bg-emerald-950/20 text-emerald-300'
+                        : 'border-red-500/30 bg-red-950/20 text-red-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between pb-2 border-b border-white/[0.08]">
+                      <span className="font-bold">
+                        {execResult.passed ? '✓ Output Passed (100/100)' : '✗ Output Mismatch (0/100)'}
+                      </span>
+                      <span className="text-[10px] opacity-70">
+                        {execResult.passed ? 'All test conditions met' : 'Inspect feedback below'}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 space-y-2">
+                      <p className="font-sans text-xs">{execResult.feedback}</p>
+                      <div>
+                        <span className="text-slate-400">Actual Output: </span>
+                        <pre className="mt-1 rounded bg-black/40 p-2 text-white overflow-x-auto">
+                          {execResult.actual_output || '(no stdout produced)'}
+                        </pre>
+                      </div>
+                      {execResult.error && (
+                        <div>
+                          <span className="text-red-400">Error: </span>
+                          <pre className="mt-1 rounded bg-black/40 p-2 text-red-300 overflow-x-auto">
+                            {execResult.error}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 5. PROGRESSIVE AI HINT LADDER */}
+              {content.hints && (
+                <div className="pt-4 border-t border-white/[0.08] space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-white">Progressive AI Hint Ladder</h3>
+                      <p className="text-[11px] text-slate-400">
+                        Unlock progressive clues without spoiling the solution immediately.
+                      </p>
+                    </div>
+
+                    {revealedHintLevel < 4 && (
+                      <button
+                        type="button"
+                        onClick={unlockNextHint}
+                        className="rounded-xl border border-sky-400/30 bg-sky-400/10 px-3.5 py-1.5 text-xs font-semibold text-sky-300 hover:bg-sky-400/20 transition"
+                      >
+                        {revealedHintLevel === 0
+                          ? '💡 Reveal Hint 1 (Direction)'
+                          : revealedHintLevel === 1
+                          ? '💡 Reveal Hint 2 (Logic)'
+                          : revealedHintLevel === 2
+                          ? '💡 Reveal Hint 3 (Partial Code)'
+                          : '🔓 Reveal Final Solution'}
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {revealedHintLevel >= 1 && content.hints.hint_1 && (
+                      <div className="rounded-xl border border-sky-400/20 bg-sky-400/[0.05] p-3.5 text-xs">
+                        <span className="font-bold text-sky-300">Hint 1 (Direction): </span>
+                        <span className="text-slate-300">{content.hints.hint_1}</span>
+                      </div>
+                    )}
+
+                    {revealedHintLevel >= 2 && content.hints.hint_2 && (
+                      <div className="rounded-xl border border-violet-400/20 bg-violet-400/[0.05] p-3.5 text-xs">
+                        <span className="font-bold text-violet-300">Hint 2 (Logic): </span>
+                        <span className="text-slate-300">{content.hints.hint_2}</span>
+                      </div>
+                    )}
+
+                    {revealedHintLevel >= 3 && content.hints.hint_3 && (
+                      <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.05] p-3.5 text-xs">
+                        <span className="font-bold text-amber-300">Hint 3 (Partial Code): </span>
+                        <span className="text-slate-300">{content.hints.hint_3}</span>
+                      </div>
+                    )}
+
+                    {revealedHintLevel >= 4 && content.hints.final_solution && (
+                      <div className="rounded-xl border border-emerald-400/30 bg-emerald-950/30 p-4 text-xs">
+                        <span className="font-bold text-emerald-400">Final Solution: </span>
+                        <pre className="mt-2 rounded-lg bg-black/50 p-3 font-mono text-xs text-emerald-300 overflow-x-auto">
+                          {content.hints.final_solution}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
-
-              {revealedHintLevel >= 2 && (
-                <div className="rounded-xl border border-violet-400/20 bg-violet-400/[0.05] p-3.5 text-xs">
-                  <span className="font-bold text-violet-300">Hint 2 (Logic): </span>
-                  <span className="text-slate-300">{content.hints.hint_2}</span>
+            </section>
+          ) : (
+            /* Conceptual Practice Layout (Clean reading & reflection) */
+            <section className="rounded-3xl border border-violet-500/20 bg-slate-950/80 p-6 shadow-xl backdrop-blur-xl sm:p-8 space-y-4">
+              <span className="rounded-full border border-violet-400/20 bg-violet-400/10 px-2.5 py-0.5 text-[10px] font-bold uppercase text-violet-400">
+                Conceptual Practice & Reflection
+              </span>
+              <h2 className="text-xl font-bold text-white">Knowledge Check & Reflection</h2>
+              <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 text-xs leading-relaxed text-slate-300">
+                <p className="font-semibold text-white mb-2">Prompt:</p>
+                <p>{content.interactive_practice.prompt}</p>
+              </div>
+              {content.hints?.hint_1 && (
+                <div className="rounded-xl border border-sky-400/20 bg-sky-400/[0.05] p-3 text-xs text-slate-300">
+                  <span className="font-bold text-sky-300">Key Takeaway: </span>
+                  {content.hints.hint_1}
                 </div>
               )}
-
-              {revealedHintLevel >= 3 && (
-                <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.05] p-3.5 text-xs">
-                  <span className="font-bold text-amber-300">Hint 3 (Partial Code): </span>
-                  <span className="text-slate-300">{content.hints.hint_3}</span>
-                </div>
-              )}
-
-              {revealedHintLevel >= 4 && (
-                <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.05] p-4 text-xs font-mono">
-                  <div className="font-sans font-bold text-emerald-300 pb-2">Final Solution:</div>
-                  <pre className="text-slate-200 overflow-x-auto">{content.hints.final_solution}</pre>
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
+            </section>
+          )
+        )}
 
         {/* 6. QUIZ SECTION */}
         <section className="rounded-3xl border border-white/[0.08] bg-slate-950/70 p-6 backdrop-blur-xl sm:p-8 space-y-6">
@@ -489,7 +541,7 @@ function LearnContent() {
                   </p>
 
                   <div className="grid gap-2 sm:grid-cols-2">
-                    {q.options.map((opt) => {
+                    {(shuffledOptions[q.id] || q.options).map((opt) => {
                       const isSelected = selected === opt;
                       const isCorrect = qResult?.correct_answer === opt;
                       const isWrong = isSelected && qResult && !qResult.is_correct;

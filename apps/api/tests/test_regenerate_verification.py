@@ -1,6 +1,14 @@
 import httpx
+import pytest
 
 def test_regenerate_response():
+    try:
+        health = httpx.get("http://127.0.0.1:8000/health", timeout=1.0)
+        if health.status_code != 200:
+            pytest.skip("Live backend server not running at localhost:8000")
+    except Exception:
+        pytest.skip("Live backend server not running at localhost:8000")
+
     client = httpx.Client(base_url="http://127.0.0.1:8000", timeout=35.0)
 
     # 1. Login

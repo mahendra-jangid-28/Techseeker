@@ -125,6 +125,10 @@ def execute_sandboxed_code(
 
         execution_time_ms = int((time.perf_counter() - start_time) * 1000)
 
+        # Append helpful contextual tip if EOFError was triggered due to empty STDIN
+        if "EOFError: EOF when reading a line" in stderr and not stdin_input.strip():
+            stderr += "\n\n[TechSeeker Sandbox Tip] Your Python code requested input via input(), but STDIN was empty. In sandboxed batch execution, please enter input lines in the STDIN panel before clicking Run."
+
         return CodeExecutionResponse(
             stdout=stdout,
             stderr=stderr,
