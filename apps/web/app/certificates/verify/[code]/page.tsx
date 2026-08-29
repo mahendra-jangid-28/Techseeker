@@ -92,14 +92,14 @@ export default function VerifyCertificatePage({
 
       {result?.valid ? (
         /* Verified Certificate Canvas */
-        <div className="relative overflow-hidden rounded-3xl border-2 border-brand-border bg-gradient-to-br from-surface-elevated via-surface to-surface p-8 sm:p-14 shadow-elevated space-y-8 text-center print:border-none print:shadow-none">
+        <div className="relative overflow-hidden rounded-3xl border-2 border-amber-400/30 bg-gradient-to-br from-amber-500/10 via-surface-elevated to-surface p-8 sm:p-14 shadow-elevated space-y-8 text-center print:border-none print:shadow-none">
           {/* Watermark badge */}
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-subtle text-3xl text-brand border border-brand-border">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/15 text-3xl text-amber-500 border border-amber-400/30">
             🎖
           </div>
 
           <div className="space-y-2">
-            <Badge variant="success" size="md" className="mx-auto">
+            <Badge variant="reward" size="md" className="mx-auto">
               ✓ Officially Verified Credential
             </Badge>
             <h1 className="text-xs uppercase tracking-widest text-content-muted font-bold pt-2">
@@ -112,7 +112,7 @@ export default function VerifyCertificatePage({
 
           <div className="space-y-2 max-w-xl mx-auto">
             <p className="text-xs text-content-muted">This certifies that</p>
-            <h3 className="text-xl sm:text-3xl font-bold bg-gradient-to-r from-sky-400 via-cyan-400 to-violet-400 bg-clip-text text-transparent">
+            <h3 className="text-xl sm:text-3xl font-bold bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 bg-clip-text text-transparent">
               {result.recipient_name}
             </h3>
             <p className="text-xs text-content-secondary leading-relaxed pt-2">
@@ -129,7 +129,7 @@ export default function VerifyCertificatePage({
               <span className="text-[10px] uppercase font-bold text-content-muted block">
                 Verification Code
               </span>
-              <span className="font-mono font-bold text-brand">{result.verification_code}</span>
+              <span className="font-mono font-bold text-amber-500">{result.verification_code}</span>
             </div>
 
             <div>

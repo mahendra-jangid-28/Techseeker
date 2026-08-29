@@ -286,3 +286,21 @@ async def stream_chat(
     finally:
         if should_close:
             session.close()
+
+
+def delete_conversation(
+    db: Session,
+    user: User,
+    conversation_id: int,
+) -> bool:
+    repository = ChatRepository(db)
+    success = repository.delete_conversation(
+        conversation_id=conversation_id,
+        user_id=user.id,
+    )
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        )
+    return True

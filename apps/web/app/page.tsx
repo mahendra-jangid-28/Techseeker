@@ -72,11 +72,11 @@ function getActivityIcon(type: string): string {
 function getIntensityClass(level: number): string {
   switch (level) {
     case 1:
-      return 'bg-emerald-500/30 border-emerald-500/40 text-emerald-700 dark:text-emerald-300';
+      return 'bg-amber-500/25 border-amber-500/35 text-amber-700 dark:text-amber-300';
     case 2:
-      return 'bg-emerald-500/60 border-emerald-500/70 text-white';
+      return 'bg-amber-500/60 border-amber-500/70 text-slate-950 font-bold';
     case 3:
-      return 'bg-emerald-500 border-emerald-400 text-white shadow-subtle';
+      return 'bg-gradient-to-br from-amber-400 to-yellow-300 border-amber-300 text-slate-950 shadow-subtle font-bold';
     case 0:
     default:
       return 'bg-surface border-border-subtle';
@@ -250,7 +250,7 @@ export default function HomePage() {
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-brand-subtle blur-3xl" />
         <div className="absolute right-0 top-20 h-96 w-96 rounded-full bg-accent-violet/10 blur-3xl" />
-        <div className="absolute bottom-0 left-1/3 h-80 w-80 rounded-full bg-accent-cyan/10 blur-3xl" />
+        <div className="absolute bottom-0 left-1/3 h-80 w-80 rounded-full bg-data-subtle blur-3xl" />
       </div>
 
       {/* PRIORITY 1: GREETING & LEARNER CONTEXT */}
@@ -258,7 +258,7 @@ export default function HomePage() {
         title={
           <span>
             {greeting},{' '}
-            <span className="bg-gradient-to-r from-sky-400 via-cyan-400 to-violet-400 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-indigo-400 via-violet-400 to-pink-400 bg-clip-text text-transparent">
               {userName}
             </span>
           </span>
@@ -266,7 +266,7 @@ export default function HomePage() {
         description="Your personal learning intelligence command center. Review adaptive recommendations, build systems, and maintain momentum."
         badge={
           <Badge variant="ai-accent" size="sm">
-            <span className="h-1.5 w-1.5 rounded-full bg-sky-400 animate-pulse" />
+            <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-pulse" />
             Learning Intelligence Active
           </Badge>
         }
@@ -452,7 +452,7 @@ export default function HomePage() {
           progress={currentLevelProgressXp}
           variant="interactive"
           badge={
-            <Badge variant="primary" size="sm">
+            <Badge variant="reward" size="sm">
               +{100 - currentLevelProgressXp} to L{level + 1}
             </Badge>
           }
@@ -638,7 +638,7 @@ export default function HomePage() {
 
             <div className="mt-6 flex flex-wrap items-center gap-3 pt-2">
               <Link href="/learn">
-                <Button variant="primary" size="md">
+                <Button variant="hero" size="md">
                   Resume Lesson →
                 </Button>
               </Link>
@@ -672,7 +672,7 @@ export default function HomePage() {
 
             <div className="mt-6 flex flex-wrap gap-3">
               <Link href="/learn">
-                <Button variant="primary" size="md">
+                <Button variant="hero" size="md">
                   Start Learning →
                 </Button>
               </Link>
@@ -740,9 +740,9 @@ export default function HomePage() {
               <span>Less</span>
               <div className="flex items-center gap-1">
                 <div className="h-2.5 w-2.5 rounded border border-border-subtle bg-surface" />
-                <div className="h-2.5 w-2.5 rounded border border-emerald-500/40 bg-emerald-500/30" />
-                <div className="h-2.5 w-2.5 rounded border border-emerald-500/70 bg-emerald-500/60" />
-                <div className="h-2.5 w-2.5 rounded border border-emerald-400 bg-emerald-500" />
+                <div className="h-2.5 w-2.5 rounded border border-amber-500/35 bg-amber-500/25" />
+                <div className="h-2.5 w-2.5 rounded border border-amber-500/70 bg-amber-500/60" />
+                <div className="h-2.5 w-2.5 rounded border border-amber-300 bg-amber-400" />
               </div>
               <span>More</span>
             </div>

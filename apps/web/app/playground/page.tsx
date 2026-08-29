@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import Editor from '@monaco-editor/react';
+import Editor, { type OnMount } from '@monaco-editor/react';
 import {
   runPlaygroundCode,
   runChallengeTestcases,
@@ -13,6 +13,50 @@ import {
 } from '../../lib/api/playground';
 import { useTheme } from '../../components/ThemeProvider';
 import { Button, ContentCallout, Badge, CodeBlock } from '@techseeker/ui';
+import { triggerConfetti } from '../../lib/utils/confetti';
+
+interface LanguageConfig {
+  id: string;
+  label: string;
+  badge?: string;
+  comingSoon: boolean;
+  icon: string;
+  filename: string;
+}
+
+const LANGUAGES: LanguageConfig[] = [
+  {
+    id: 'python',
+    label: 'Python 3.12 (Sandbox)',
+    comingSoon: false,
+    icon: '🐍',
+    filename: 'main.py',
+  },
+  {
+    id: 'javascript',
+    label: 'JavaScript (Node)',
+    badge: 'Coming soon',
+    comingSoon: true,
+    icon: 'JS',
+    filename: 'app.js',
+  },
+  {
+    id: 'typescript',
+    label: 'TypeScript (v5.9)',
+    badge: 'Coming soon',
+    comingSoon: true,
+    icon: 'TS',
+    filename: 'solution.ts',
+  },
+  {
+    id: 'sql',
+    label: 'PostgreSQL / SQL',
+    badge: 'Coming soon',
+    comingSoon: true,
+    icon: 'SQL',
+    filename: 'query.sql',
+  },
+];
 
 const STARTER_CODES: Record<string, string> = {
   python: `"""
@@ -136,8 +180,26 @@ export default function PlaygroundPage() {
   const [reviewResult, setReviewResult] = useState<AICodeReviewResponse | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
 
+  // Custom Language Selector Dropdown state
+  const [langDropdownOpen, setLangDropdownOpen] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const consoleEndRef = useRef<HTMLDivElement | null>(null);
+  const langDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // Keep ref to latest handleRunCode to ensure Monaco keybinding always executes newest state
+  const handleRunCodeRef = useRef<() => Promise<void>>(async () => {});
+
+  // Close language dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (langDropdownRef.current && !langDropdownRef.current.contains(e.target as Node)) {
+        setLangDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Restore from localStorage on initial mount / language change
   useEffect(() => {
@@ -171,16 +233,21 @@ export default function PlaygroundPage() {
     }
   }, [executionResult, activeTab]);
 
-  async function handleRunCode() {
+  // Auto-detect input() in Python code to proactively surface STDIN panel
+  const usesInput = language === 'python' && /\binput\s*\(/.test(code);
+
+  async function handleRunCode(overrideStdin?: string) {
     if (isLoading) return;
     setIsLoading(true);
     setActiveTab('console');
+
+    const inputPayload = overrideStdin !== undefined ? overrideStdin : stdin;
 
     try {
       const res = await runPlaygroundCode({
         language,
         code,
-        stdin: stdin.trim() ? stdin : undefined,
+        stdin: inputPayload.length > 0 ? inputPayload : undefined,
       });
       setExecutionResult(res);
     } catch (err) {
@@ -195,6 +262,25 @@ export default function PlaygroundPage() {
     }
   }
 
+  // Update handleRunCodeRef continuously
+  useEffect(() => {
+    handleRunCodeRef.current = handleRunCode;
+  });
+
+  // Monaco Editor onMount handler: Register Ctrl+Enter / Cmd+Enter keybinding
+  const handleEditorMount: OnMount = (editor, monaco) => {
+    editor.addAction({
+      id: 'run-playground-code',
+      label: 'Run Code',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 1,
+      run: () => {
+        handleRunCodeRef.current();
+      },
+    });
+  };
+
   async function handleRunTests() {
     if (isRunningTests || isLoading) return;
     setIsRunningTests(true);
@@ -207,6 +293,9 @@ export default function PlaygroundPage() {
         testcases,
       });
       setTestResults(res);
+      if (res.passed) {
+        triggerConfetti();
+      }
     } catch (err) {
       setTestResults({
         passed: false,
@@ -294,53 +383,103 @@ export default function PlaygroundPage() {
     e.target.value = '';
   }
 
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-      e.preventDefault();
-      handleRunCode();
+  // Global window keydown fallback listener for Ctrl+Enter when editor is not directly focused
+  useEffect(() => {
+    function handleGlobalKeyDown(e: globalThis.KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        const target = e.target as HTMLElement;
+        const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+        if (!isInput) {
+          e.preventDefault();
+          handleRunCodeRef.current();
+        }
+      }
     }
-  }
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
 
   const lineCount = code.split('\n').length;
+  const currentLangConfig = LANGUAGES.find((l) => l.id === language) || LANGUAGES[0];
+  const isEofError = executionResult?.stderr?.includes('EOFError');
+  const isTimeoutError = executionResult?.exit_code === 124 || executionResult?.stderr?.includes('timed out');
 
   return (
-    <main
-      onKeyDown={handleKeyDown}
-      tabIndex={0}
-      className="flex h-[calc(100vh-theme(spacing.12))] md:h-screen w-full flex-col bg-canvas text-content-primary outline-none overflow-hidden"
-    >
+    <main className="flex h-[calc(100vh-theme(spacing.12))] md:h-screen w-full flex-col bg-canvas text-content-primary outline-none overflow-hidden select-none">
       {/* Top Application Bar */}
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border-subtle bg-surface px-4">
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex items-center gap-2">
             <span className="flex h-6 w-6 items-center justify-center rounded-md bg-brand-subtle text-brand border border-brand-border text-xs font-bold shrink-0">
-              VS
+              IDE
             </span>
             <div className="min-w-0 hidden sm:block">
               <h1 className="text-xs font-bold tracking-tight text-content-primary uppercase">
-                Interactive IDE
+                Interactive Playground
               </h1>
               <p className="text-[9px] text-content-muted truncate">
-                Multi-Language Sandboxed Engineering
+                Sandboxed Python Execution Engine
               </p>
             </div>
           </div>
 
           <div className="h-4 w-px bg-border-subtle hidden sm:block" />
 
-          {/* Language Selector Dropdown */}
-          <div className="flex items-center gap-1.5">
-            <select
-              id="language-select"
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-              className="rounded-lg border border-border-subtle bg-surface-elevated px-2.5 py-1 text-xs font-medium text-content-primary focus:border-brand focus:outline-none cursor-pointer"
+          {/* Language Selector Custom Dropdown */}
+          <div className="relative" ref={langDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setLangDropdownOpen((prev) => !prev)}
+              className="flex items-center gap-2 rounded-lg border border-border-subtle bg-surface-elevated px-2.5 py-1 text-xs font-medium text-content-primary hover:border-brand-border transition cursor-pointer"
+              aria-label="Select execution language"
             >
-              <option value="python">Python 3.12 (Sandbox)</option>
-              <option value="javascript">JavaScript (Node)</option>
-              <option value="typescript">TypeScript</option>
-              <option value="sql">PostgreSQL / SQL</option>
-            </select>
+              <span className="text-xs">{currentLangConfig.icon}</span>
+              <span className="font-semibold">{currentLangConfig.label}</span>
+              <span className="text-[10px] text-content-muted">▼</span>
+            </button>
+
+            {langDropdownOpen && (
+              <div className="absolute left-0 top-full mt-1.5 w-64 rounded-xl border border-border bg-surface shadow-elevated p-1.5 z-50 animate-fade-in">
+                <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-content-muted border-b border-border-subtle mb-1">
+                  Select Language
+                </div>
+                {LANGUAGES.map((lang) => {
+                  const isSelected = lang.id === language;
+                  return (
+                    <button
+                      key={lang.id}
+                      type="button"
+                      disabled={lang.comingSoon}
+                      onClick={() => {
+                        if (!lang.comingSoon) {
+                          setLanguage(lang.id);
+                          setLangDropdownOpen(false);
+                        }
+                      }}
+                      className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition ${
+                        isSelected
+                          ? 'bg-brand-subtle text-brand font-bold'
+                          : lang.comingSoon
+                          ? 'opacity-50 cursor-not-allowed text-content-muted'
+                          : 'text-content-primary hover:bg-surface-hover cursor-pointer'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span>{lang.icon}</span>
+                        <span>{lang.label}</span>
+                      </div>
+                      {lang.comingSoon ? (
+                        <span className="rounded-full border border-border-subtle bg-surface-elevated px-1.5 py-0.2 text-[8px] font-semibold text-content-muted">
+                          Coming soon
+                        </span>
+                      ) : isSelected ? (
+                        <span className="text-brand font-bold">✓</span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Font Size Control */}
@@ -457,10 +596,11 @@ export default function PlaygroundPage() {
           <Button
             variant="primary"
             size="sm"
-            onClick={handleRunCode}
+            onClick={() => handleRunCode()}
             disabled={isLoading || isReviewing || isRunningTests}
             isLoading={isLoading}
             className="text-xs font-bold shadow-subtle px-3.5"
+            title="Execute script (Ctrl + Enter)"
           >
             <span>▶</span>
             <span>{isLoading ? 'Running...' : 'Run'}</span>
@@ -475,9 +615,9 @@ export default function PlaygroundPage() {
         <section className="flex flex-col border-b border-border-subtle lg:col-span-7 lg:border-b-0 lg:border-r bg-surface min-h-[350px] lg:min-h-0">
           {/* File Tab Bar */}
           <div className="flex h-9 shrink-0 items-center justify-between border-b border-border-subtle bg-surface px-3">
-            <div className="flex h-full items-center gap-2 border-t-2 border-brand bg-surface-elevated px-3 text-xs font-medium text-content-primary">
-              <span className="text-brand font-mono">
-                {language === 'python' ? '🐍 main.py' : language === 'typescript' ? 'TS solution.ts' : language === 'javascript' ? 'JS app.js' : 'SQL query.sql'}
+            <div className="flex h-full items-center gap-2 border-t-2 border-data bg-surface-elevated px-3 text-xs font-medium text-content-primary">
+              <span className="text-data font-mono">
+                {currentLangConfig.icon} {currentLangConfig.filename}
               </span>
               <span className="text-[10px] text-content-muted font-mono">({lineCount} lines)</span>
             </div>
@@ -486,14 +626,18 @@ export default function PlaygroundPage() {
               <button
                 type="button"
                 onClick={() => setIsStdinOpen((prev) => !prev)}
-                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                  isStdinOpen
-                    ? 'bg-brand-subtle text-brand border border-brand-border'
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition cursor-pointer ${
+                  isStdinOpen || usesInput
+                    ? 'bg-data-subtle text-data border border-data-border'
                     : 'text-content-secondary hover:bg-surface-hover hover:text-content-primary'
                 }`}
+                title="Open Standard Input (STDIN) Stream Drawer"
               >
                 <span>⌨</span>
                 <span>STDIN {isStdinOpen ? '▲' : '▼'}</span>
+                {usesInput && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" title="Code expects input()" />
+                )}
               </button>
             </div>
           </div>
@@ -502,17 +646,24 @@ export default function PlaygroundPage() {
           {isStdinOpen && (
             <div className="border-b border-border-subtle bg-surface-elevated p-3 animate-fade-in">
               <div className="mb-1.5 flex items-center justify-between text-[11px] text-content-secondary">
-                <span className="font-semibold uppercase tracking-wider text-content-primary">
-                  Standard Input Stream
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold uppercase tracking-wider text-content-primary">
+                    Standard Input Stream
+                  </span>
+                  {usesInput && (
+                    <span className="rounded bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.2 text-[9px] font-semibold text-amber-500">
+                      input() detected
+                    </span>
+                  )}
+                </div>
                 <span className="text-[10px] text-content-muted">
-                  Passed to stdin during execution
+                  Passed to stdin during execution (one line per input prompt)
                 </span>
               </div>
               <textarea
                 value={stdin}
                 onChange={(e) => setStdin(e.target.value)}
-                placeholder="Enter input lines here..."
+                placeholder="Enter input values here (e.g. your name, numbers)..."
                 rows={3}
                 className="w-full resize-y rounded-lg border border-border-subtle bg-surface p-2.5 font-mono text-xs text-content-primary outline-none focus:border-brand focus:ring-1 focus:ring-brand"
               />
@@ -527,6 +678,7 @@ export default function PlaygroundPage() {
               theme={theme === 'dark' ? 'vs-dark' : 'light'}
               value={code}
               onChange={(val) => setCode(val ?? '')}
+              onMount={handleEditorMount}
               options={{
                 fontSize,
                 fontFamily: 'Menlo, Monaco, "Courier New", monospace',
@@ -549,8 +701,11 @@ export default function PlaygroundPage() {
               <span>UTF-8</span>
               <span>Font: {fontSize}px</span>
             </div>
-            <div className="hidden sm:block">
-              <span>Ctrl + Enter to run</span>
+            <div className="hidden sm:flex items-center gap-2">
+              <kbd className="rounded border border-border-subtle bg-surface-elevated px-1.5 py-0.2">
+                Ctrl + Enter
+              </kbd>
+              <span>to execute</span>
             </div>
           </div>
         </section>
@@ -563,7 +718,7 @@ export default function PlaygroundPage() {
               <button
                 type="button"
                 onClick={() => setActiveTab('console')}
-                className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+                className={`rounded-md px-2.5 py-1 text-xs font-semibold transition cursor-pointer ${
                   activeTab === 'console'
                     ? 'bg-surface-elevated text-content-primary shadow-subtle'
                     : 'text-content-muted hover:text-content-primary'
@@ -575,7 +730,7 @@ export default function PlaygroundPage() {
               <button
                 type="button"
                 onClick={() => setActiveTab('tests')}
-                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition cursor-pointer ${
                   activeTab === 'tests'
                     ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shadow-subtle'
                     : 'text-content-muted hover:text-content-primary'
@@ -596,7 +751,7 @@ export default function PlaygroundPage() {
               <button
                 type="button"
                 onClick={() => setActiveTab('review')}
-                className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+                className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition cursor-pointer ${
                   activeTab === 'review'
                     ? 'bg-brand-subtle text-brand shadow-subtle'
                     : 'text-content-muted hover:text-content-primary'
@@ -629,15 +784,18 @@ export default function PlaygroundPage() {
           </div>
 
           {/* Panel Content Area */}
-          <div className="flex-1 min-h-0 overflow-y-auto p-4">
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 select-text">
             {/* TAB 1: CONSOLE OUTPUT */}
             {activeTab === 'console' && (
               <div className="space-y-4">
                 {isLoading ? (
                   <div className="flex flex-col items-center justify-center py-16 text-center text-content-muted">
-                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent mb-3" />
+                    <div className="h-7 w-7 animate-spin rounded-full border-2 border-data border-t-transparent mb-3" />
                     <p className="text-xs font-semibold text-content-primary">
-                      Executing in sandbox...
+                      Executing in sandbox container...
+                    </p>
+                    <p className="text-[10px] text-content-muted mt-1">
+                      Enforcing timeout, memory limits, and isolated permissions.
                     </p>
                   </div>
                 ) : !executionResult ? (
@@ -652,8 +810,37 @@ export default function PlaygroundPage() {
                       Click <span className="font-semibold text-brand">Run</span> or press{' '}
                       <kbd className="rounded border border-border-subtle bg-surface px-1.5 py-0.5 font-mono text-[10px]">
                         Ctrl + Enter
-                      </kbd>
+                      </kbd>{' '}
+                      to execute your Python code.
                     </p>
+
+                    {/* Proactive STDIN Input Box in console when input() is in code */}
+                    {usesInput && (
+                      <div className="mt-5 text-left rounded-xl border border-amber-500/30 bg-surface p-3.5 shadow-subtle">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-500 mb-1.5">
+                          <span>⌨</span>
+                          <span>Interactive Input Required</span>
+                        </div>
+                        <p className="text-[11px] text-content-muted mb-2">
+                          Your code uses <code className="font-mono text-amber-400">input()</code>. Type the input lines below before executing:
+                        </p>
+                        <textarea
+                          value={stdin}
+                          onChange={(e) => setStdin(e.target.value)}
+                          placeholder="Type input here..."
+                          rows={2}
+                          className="w-full resize-none rounded-lg border border-border-subtle bg-surface-elevated p-2 font-mono text-xs text-content-primary outline-none focus:border-brand"
+                        />
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => handleRunCode()}
+                          className="mt-2 text-xs font-semibold w-full justify-center"
+                        >
+                          Run with Input
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -662,12 +849,19 @@ export default function PlaygroundPage() {
                       <span className="text-xs font-bold uppercase tracking-wider text-content-muted">
                         Terminal Output
                       </span>
-                      <Badge
-                        variant={executionResult.exit_code === 0 ? 'success' : 'danger'}
-                        size="sm"
-                      >
-                        {executionResult.exit_code === 0 ? 'Exit Code 0 (Success)' : `Exit Code ${executionResult.exit_code}`}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        {isTimeoutError && (
+                          <Badge variant="warning" size="sm">
+                            Timeout (2.0s limit)
+                          </Badge>
+                        )}
+                        <Badge
+                          variant={executionResult.exit_code === 0 ? 'success' : 'danger'}
+                          size="sm"
+                        >
+                          {executionResult.exit_code === 0 ? 'Exit Code 0 (Success)' : `Exit Code ${executionResult.exit_code}`}
+                        </Badge>
+                      </div>
                     </div>
 
                     {/* Standard Output */}
@@ -693,6 +887,39 @@ export default function PlaygroundPage() {
                         </pre>
                       </div>
                     )}
+
+                    {/* Inline STDIN Prompt if code threw EOFError due to empty input */}
+                    {isEofError && (
+                      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-amber-500 mb-1">
+                          <span>⌨</span>
+                          <span>Provide Input for input()</span>
+                        </div>
+                        <p className="text-[11px] text-content-secondary mb-2 leading-relaxed">
+                          Your code called <code className="font-mono text-amber-400">input()</code>, but STDIN was empty. Enter the input value below and click <strong>Run with Input</strong>:
+                        </p>
+                        <div className="space-y-2">
+                          <textarea
+                            value={stdin}
+                            onChange={(e) => setStdin(e.target.value)}
+                            placeholder="Enter input string or numbers..."
+                            rows={2}
+                            className="w-full resize-none rounded-lg border border-amber-500/40 bg-surface p-2 font-mono text-xs text-content-primary outline-none focus:border-brand"
+                          />
+                          <div className="flex justify-end">
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() => handleRunCode()}
+                              isLoading={isLoading}
+                              className="text-xs font-semibold"
+                            >
+                              Run with Input
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
                 <div ref={consoleEndRef} />
@@ -703,248 +930,253 @@ export default function PlaygroundPage() {
             {activeTab === 'tests' && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between border-b border-border-subtle pb-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-content-primary">
-                    Challenge Test Cases ({testcases.length})
-                  </span>
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-content-primary">
+                      Challenge Test Suite
+                    </h3>
+                    <p className="text-[10px] text-content-muted">
+                      Verify solution against edge cases & sample inputs
+                    </p>
+                  </div>
+
                   <Button
                     variant="primary"
                     size="sm"
                     onClick={handleRunTests}
+                    disabled={isRunningTests || isLoading}
                     isLoading={isRunningTests}
+                    className="text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white"
                   >
-                    Run All Tests ✓
+                    Run Test Cases
                   </Button>
                 </div>
 
-                {/* Summary Feedback */}
-                {testResults && (
-                  <div
-                    className={`rounded-xl border p-3.5 flex items-center justify-between ${
-                      testResults.passed
-                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                        : 'border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg font-bold">{testResults.passed ? '✓' : '✗'}</span>
-                      <span className="text-xs font-bold">{testResults.feedback}</span>
+                {isRunningTests ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center text-content-muted">
+                    <div className="h-7 w-7 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent mb-3" />
+                    <p className="text-xs font-semibold text-content-primary">
+                      Evaluating test cases against sandbox...
+                    </p>
+                  </div>
+                ) : testResults ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between rounded-xl border border-border-subtle bg-surface p-3">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-base ${testResults.passed ? 'text-emerald-500' : 'text-rose-500'}`}>
+                          {testResults.passed ? '✓' : '✗'}
+                        </span>
+                        <div>
+                          <p className="text-xs font-bold text-content-primary">
+                            {testResults.feedback}
+                          </p>
+                          <p className="text-[10px] text-content-muted font-mono">
+                            {testResults.execution_time_ms} ms total execution
+                          </p>
+                        </div>
+                      </div>
+                      <Badge variant={testResults.passed ? 'success' : 'danger'} size="md">
+                        {testResults.passed ? 'PASSED' : 'FAILED'}
+                      </Badge>
                     </div>
-                    <span className="font-mono text-xs font-semibold">
-                      {testResults.execution_time_ms} ms
-                    </span>
+
+                    {/* Test Case Cards */}
+                    <div className="space-y-2">
+                      {testResults.test_results.map((tr) => (
+                        <div
+                          key={tr.id}
+                          className={`rounded-xl border p-3 ${
+                            tr.passed
+                              ? 'border-emerald-500/30 bg-emerald-500/5'
+                              : 'border-rose-500/30 bg-rose-500/5'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-xs font-bold font-mono">
+                              Case #{tr.id}
+                            </span>
+                            <Badge variant={tr.passed ? 'success' : 'danger'} size="sm">
+                              {tr.passed ? 'Pass' : 'Fail'}
+                            </Badge>
+                          </div>
+
+                          <div className="space-y-1 text-[11px] font-mono">
+                            <div className="text-content-muted">Input: {tr.input}</div>
+                            <div className="text-content-secondary">
+                              Expected: {tr.expected_output}
+                            </div>
+                            <div className={tr.passed ? 'text-emerald-400' : 'text-rose-400'}>
+                              Actual: {tr.actual_output}
+                            </div>
+                            {tr.error && (
+                              <div className="mt-1 text-rose-500 text-[10px]">
+                                Error: {tr.error}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {testcases.map((tc) => (
+                      <div key={tc.id} className="rounded-xl border border-border-subtle bg-surface p-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-semibold">Test Case #{tc.id}</span>
+                          <span className="text-[10px] text-content-muted">{tc.explanation}</span>
+                        </div>
+                        <div className="space-y-0.5 text-[11px] font-mono text-content-muted">
+                          <div>Input: {tc.input}</div>
+                          <div>Expected: {tc.expected_output}</div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
-
-                {/* Test Cases List */}
-                <div className="space-y-3">
-                  {testcases.map((tc, idx) => {
-                    const res = testResults?.test_results.find((r) => r.id === tc.id);
-
-                    return (
-                      <div
-                        key={tc.id}
-                        className={`rounded-xl border p-3.5 space-y-2 transition-all ${
-                          res
-                            ? res.passed
-                              ? 'border-emerald-500/40 bg-emerald-500/5'
-                              : 'border-rose-500/40 bg-rose-500/5'
-                            : 'border-border-subtle bg-surface'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-content-primary">
-                            Test Case {idx + 1}
-                          </span>
-                          {res && (
-                            <span
-                              className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${
-                                res.passed
-                                  ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
-                                  : 'bg-rose-500/20 text-rose-600 dark:text-rose-400'
-                              }`}
-                            >
-                              {res.passed ? 'Passed ✓' : 'Failed ✗'}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Input & Expected */}
-                        <div className="grid gap-2 sm:grid-cols-2 text-xs font-mono">
-                          <div className="rounded-lg bg-surface-elevated p-2">
-                            <span className="text-[10px] uppercase font-bold text-content-muted block mb-1">
-                              Input:
-                            </span>
-                            <span className="text-content-secondary">{tc.input}</span>
-                          </div>
-
-                          <div className="rounded-lg bg-surface-elevated p-2">
-                            <span className="text-[10px] uppercase font-bold text-content-muted block mb-1">
-                              Expected:
-                            </span>
-                            <span className="text-emerald-600 dark:text-emerald-400">{tc.expected_output}</span>
-                          </div>
-                        </div>
-
-                        {/* Actual Output if evaluated */}
-                        {res && !res.passed && (
-                          <div className="rounded-lg bg-rose-500/10 border border-rose-500/20 p-2 font-mono text-xs">
-                            <span className="text-[10px] uppercase font-bold text-rose-500 block mb-1">
-                              Actual Output:
-                            </span>
-                            <span className="text-rose-600 dark:text-rose-300">
-                              {res.actual_output || '(No output)'}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
               </div>
             )}
 
             {/* TAB 3: AI CODE REVIEW */}
             {activeTab === 'review' && (
               <div className="space-y-4">
-                {isReviewing ? (
-                  <div className="flex flex-col items-center justify-center py-16 text-center text-content-muted">
-                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent mb-3" />
-                    <p className="text-xs font-semibold text-content-primary">
-                      AI Architect conducting code review...
-                    </p>
-                    <p className="text-[10px] text-content-muted mt-1">
-                      Analyzing logic, edge cases, algorithmic complexity, and hint progression
+                <div className="flex items-center justify-between border-b border-border-subtle pb-2">
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-brand">
+                      ✦ AI Code Intelligence Review
+                    </h3>
+                    <p className="text-[10px] text-content-muted">
+                      Evaluates time/space complexity, style, bugs, and edge cases
                     </p>
                   </div>
-                ) : reviewError ? (
-                  <ContentCallout variant="danger" title="Review Unavailable">
+
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleRunAiReview}
+                    disabled={isReviewing || isLoading}
+                    isLoading={isReviewing}
+                    className="text-xs font-bold border-brand-border bg-brand-subtle text-brand"
+                  >
+                    Generate Review
+                  </Button>
+                </div>
+
+                {reviewError && (
+                  <ContentCallout variant="danger" title="Review Error">
                     {reviewError}
                   </ContentCallout>
-                ) : !reviewResult ? (
-                  <div className="py-12 text-center max-w-sm mx-auto">
-                    <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-brand-subtle text-lg text-brand border border-brand-border">
-                      ✦
-                    </div>
-                    <h3 className="text-xs font-bold text-content-primary uppercase tracking-wider">
-                      Structured AI Review
-                    </h3>
-                    <p className="mt-1 text-xs text-content-muted leading-relaxed">
-                      Receive detailed feedback on logic flow, readability score, detected edge cases, asymptotic complexity, and progressive hint clues.
+                )}
+
+                {isReviewing ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center text-content-muted">
+                    <div className="h-7 w-7 animate-spin rounded-full border-2 border-brand border-t-transparent mb-3" />
+                    <p className="text-xs font-semibold text-content-primary">
+                      AI is inspecting code structure, complexity, and pitfalls...
                     </p>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={handleRunAiReview}
-                      className="mt-4"
-                    >
-                      Generate AI Code Review
-                    </Button>
                   </div>
-                ) : (
-                  <div className="space-y-4 animate-fade-in">
-                    {/* Overall Verdict & Readability Score */}
-                    <div className="rounded-xl border border-border-subtle bg-surface p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">
+                ) : reviewResult ? (
+                  <div className="space-y-3">
+                    {/* Verdict & Complexity Banner */}
+                    <div className="rounded-xl border border-border-subtle bg-surface p-3.5">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-brand">
                           Overall Verdict
                         </span>
-                        <Badge variant="primary" size="sm">
-                          {reviewResult.overall_verdict}
-                        </Badge>
+                        {reviewResult.readability_score !== undefined && (
+                          <Badge variant="primary" size="sm">
+                            Readability: {reviewResult.readability_score}/10
+                          </Badge>
+                        )}
                       </div>
+                      <p className="text-xs font-semibold text-content-primary leading-relaxed">
+                        {reviewResult.overall_verdict || 'Code analysis complete.'}
+                      </p>
+                    </div>
 
-                      {/* Readability Meter */}
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-semibold text-content-secondary">Readability Score:</span>
-                          <span className="font-bold font-mono text-brand">
-                            {reviewResult.readability_score} / 10
-                          </span>
-                        </div>
-                        <div className="w-full bg-surface-elevated rounded-full h-2 overflow-hidden">
-                          <div
-                            className="bg-brand h-full rounded-full transition-all duration-500"
-                            style={{ width: `${reviewResult.readability_score * 10}%` }}
-                          />
-                        </div>
-                        <p className="text-[11px] text-content-muted pt-1">
-                          {reviewResult.readability_feedback}
-                        </p>
+                    {/* Complexity Metrics */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-xl border border-border-subtle bg-surface p-3">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted block">
+                          Time Complexity
+                        </span>
+                        <span className="text-xs font-mono font-bold text-brand mt-0.5 block">
+                          {reviewResult.time_complexity || 'O(N)'}
+                        </span>
                       </div>
-
-                      {/* Complexity */}
-                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border-subtle font-mono text-xs">
-                        <div className="rounded-lg bg-surface-elevated p-2">
-                          <span className="text-[9px] uppercase text-content-muted block">Time:</span>
-                          <span className="text-brand font-semibold">{reviewResult.time_complexity}</span>
-                        </div>
-                        <div className="rounded-lg bg-surface-elevated p-2">
-                          <span className="text-[9px] uppercase text-content-muted block">Space:</span>
-                          <span className="text-accent-violet font-semibold">{reviewResult.space_complexity}</span>
-                        </div>
+                      <div className="rounded-xl border border-border-subtle bg-surface p-3">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted block">
+                          Space Complexity
+                        </span>
+                        <span className="text-xs font-mono font-bold text-accent-violet mt-0.5 block">
+                          {reviewResult.space_complexity || 'O(1)'}
+                        </span>
                       </div>
                     </div>
 
                     {/* Logic Analysis */}
-                    <div className="rounded-xl border border-border-subtle bg-surface p-4 space-y-1.5">
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-brand">
-                        Logic Analysis
-                      </h4>
-                      <p className="text-xs text-content-secondary leading-relaxed">
-                        {reviewResult.logic_analysis}
-                      </p>
-                    </div>
-
-                    {/* Better Approach */}
-                    {reviewResult.better_approach && (
-                      <div className="rounded-xl border border-border-subtle bg-surface p-4 space-y-1.5">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-accent-violet">
-                          Algorithmic Optimization
-                        </h4>
-                        <p className="text-xs text-content-secondary leading-relaxed">
-                          {reviewResult.better_approach}
+                    {reviewResult.logic_analysis && (
+                      <div className="rounded-xl border border-border-subtle bg-surface p-3.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted block mb-1">
+                          Logic Analysis
+                        </span>
+                        <p className="text-xs leading-relaxed text-content-secondary">
+                          {reviewResult.logic_analysis}
                         </p>
                       </div>
                     )}
 
-                    {/* Edge Cases & Bugs */}
-                    {reviewResult.edge_cases && reviewResult.edge_cases.length > 0 && (
-                      <div className="rounded-xl border border-border-subtle bg-surface p-4 space-y-2">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-amber-500">
-                          Edge Cases to Consider
-                        </h4>
-                        <ul className="space-y-1 text-xs text-content-secondary">
-                          {reviewResult.edge_cases.map((ec, idx) => (
-                            <li key={idx} className="flex items-start gap-2">
-                              <span className="text-amber-500 font-bold">•</span>
-                              <span>{ec}</span>
-                            </li>
+                    {/* Detected Bugs */}
+                    {reviewResult.detected_bugs && reviewResult.detected_bugs.length > 0 && (
+                      <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-3.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-rose-500 block mb-1.5">
+                          Potential Issues & Bugs
+                        </span>
+                        <ul className="list-disc pl-4 space-y-1 text-xs text-rose-600 dark:text-rose-400">
+                          {reviewResult.detected_bugs.map((bug, idx) => (
+                            <li key={idx}>{bug}</li>
                           ))}
                         </ul>
                       </div>
                     )}
 
-                    {/* Progressive Hint Ladder */}
-                    {reviewResult.hint_ladder && reviewResult.hint_ladder.length > 0 && (
-                      <div className="rounded-xl border border-border-subtle bg-surface p-4 space-y-2.5">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-500">
-                          Progressive Hint Ladder
-                        </h4>
-                        <div className="space-y-2">
-                          {reviewResult.hint_ladder.map((hint, idx) => (
-                            <div
-                              key={idx}
-                              className="rounded-lg border border-border-subtle bg-surface-elevated p-2.5 text-xs text-content-secondary"
-                            >
-                              <span className="font-semibold text-brand mr-1.5">
-                                Clue {idx + 1}:
-                              </span>
-                              <span>{hint}</span>
-                            </div>
+                    {/* Edge Cases */}
+                    {reviewResult.edge_cases && reviewResult.edge_cases.length > 0 && (
+                      <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 block mb-1.5">
+                          Edge Cases to Consider
+                        </span>
+                        <ul className="list-disc pl-4 space-y-1 text-xs text-amber-700 dark:text-amber-300">
+                          {reviewResult.edge_cases.map((ec, idx) => (
+                            <li key={idx}>{ec}</li>
                           ))}
-                        </div>
+                        </ul>
                       </div>
                     )}
+
+                    {/* Better Approach Recommendation */}
+                    {reviewResult.better_approach && (
+                      <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block mb-1">
+                          Optimal Alternative Approach
+                        </span>
+                        <p className="text-xs leading-relaxed text-emerald-700 dark:text-emerald-300">
+                          {reviewResult.better_approach}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                ) : (
+                  <div className="py-12 text-center max-w-sm mx-auto">
+                    <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-brand-subtle text-lg text-brand border border-brand-border">
+                      ✦
+                    </div>
+                    <h3 className="text-xs font-bold text-content-primary uppercase tracking-wider">
+                      Request AI Review
+                    </h3>
+                    <p className="mt-1 text-xs text-content-muted leading-relaxed">
+                      Receive detailed technical feedback, time & space Big-O analysis, and suggestions.
+                    </p>
                   </div>
                 )}
               </div>

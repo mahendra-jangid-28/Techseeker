@@ -125,7 +125,7 @@ function LoginFormContent() {
       <Card variant="elevated" className="relative w-full max-w-md p-6 sm:p-8 shadow-elevated">
         {/* Brand Header */}
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-400 to-cyan-500 text-sm font-bold text-slate-950 shadow-glow">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 text-sm font-bold text-white shadow-glow">
             TS
           </div>
 
@@ -278,6 +278,7 @@ function LoginFormContent() {
 
           <Button
             type="submit"
+            variant="hero"
             disabled={loading}
             isLoading={loading}
             className="w-full h-10 text-xs font-bold"

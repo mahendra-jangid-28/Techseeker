@@ -21,11 +21,11 @@ import {
 function getIntensityClass(level: number): string {
   switch (level) {
     case 1:
-      return 'bg-emerald-500/30 border-emerald-500/40 text-emerald-700 dark:text-emerald-300';
+      return 'bg-amber-500/25 border-amber-500/35 text-amber-700 dark:text-amber-300';
     case 2:
-      return 'bg-emerald-500/60 border-emerald-500/70 text-white';
+      return 'bg-amber-500/60 border-amber-500/70 text-slate-950 font-bold';
     case 3:
-      return 'bg-emerald-500 border-emerald-400 text-white shadow-subtle';
+      return 'bg-gradient-to-br from-amber-400 to-yellow-300 border-amber-300 text-slate-950 shadow-subtle font-bold';
     case 0:
     default:
       return 'bg-surface border-border-subtle';
@@ -243,7 +243,7 @@ export default function ProgressPage() {
           subvalue={`Level ${level} Developer`}
           progress={currentLevelProgressXp}
           badge={
-            <Badge variant="primary" size="sm">
+            <Badge variant="reward" size="sm">
               +{xpNeeded} to L{level + 1}
             </Badge>
           }
@@ -355,7 +355,7 @@ export default function ProgressPage() {
                         value={confidencePct}
                         max={100}
                         size="xs"
-                        variant={confidencePct >= 60 ? 'success' : 'amber'}
+                        variant={confidencePct >= 60 ? 'data' : 'amber'}
                       />
                     </div>
                   </div>
@@ -428,7 +428,7 @@ export default function ProgressPage() {
                 value={currentLevelProgressXp}
                 max={100}
                 size="md"
-                variant="brand"
+                variant="reward"
               />
             </div>
           </div>
@@ -551,7 +551,7 @@ export default function ProgressPage() {
                 <div key={idx} className="flex flex-1 flex-col items-center gap-2">
                   <div className="relative flex h-24 w-full items-end justify-center rounded-lg bg-surface-elevated">
                     <div
-                      className="w-full max-w-[28px] rounded-t-md bg-gradient-to-t from-sky-500 to-cyan-400 transition-all duration-300 hover:brightness-110"
+                      className="w-full max-w-[28px] rounded-t-md bg-gradient-to-t from-teal-500 to-cyan-400 transition-all duration-300 hover:brightness-110"
                       style={{ height: `${heightPercent}%` }}
                       title={`${item.day}: ${item.minutes} minutes`}
                     />
@@ -627,9 +627,9 @@ export default function ProgressPage() {
               <div className="flex items-center gap-1.5">
                 <span>Less</span>
                 <div className="h-3 w-3 rounded border border-border-subtle bg-surface" />
-                <div className="h-3 w-3 rounded border border-emerald-500/40 bg-emerald-500/30" />
-                <div className="h-3 w-3 rounded border border-emerald-500/70 bg-emerald-500/60" />
-                <div className="h-3 w-3 rounded border border-emerald-400 bg-emerald-500" />
+                <div className="h-3 w-3 rounded border border-amber-500/35 bg-amber-500/25" />
+                <div className="h-3 w-3 rounded border border-amber-500/70 bg-amber-500/60" />
+                <div className="h-3 w-3 rounded border border-amber-300 bg-amber-400" />
                 <span>More</span>
               </div>
             </div>

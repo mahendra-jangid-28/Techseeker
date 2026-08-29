@@ -167,7 +167,7 @@ export function MenuIcon({ className = 'w-4 h-4' }: { className?: string }) {
 // ==========================================
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'outline' | 'danger' | 'success' | 'icon';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'outline' | 'danger' | 'success' | 'icon' | 'hero';
   size?: 'sm' | 'md' | 'lg';
   isLoading?: boolean;
   leftIcon?: ReactNode;
@@ -186,7 +186,7 @@ export function Button({
   ...props
 }: ButtonProps) {
   const baseStyles =
-    'inline-flex items-center justify-center font-medium rounded-lg transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50 disabled:pointer-events-none cursor-pointer';
+    'inline-flex items-center justify-center font-medium rounded-lg transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50 disabled:pointer-events-none cursor-pointer active:scale-[0.97]';
 
   const sizeStyles = {
     sm: 'text-xs px-2.5 py-1.5 gap-1.5 h-8 min-h-[32px]',
@@ -202,6 +202,8 @@ export function Button({
     danger: 'bg-status-danger text-white hover:opacity-90 shadow-subtle',
     success: 'bg-status-success text-white hover:opacity-90 shadow-subtle',
     icon: 'p-2 bg-transparent text-content-secondary hover:bg-surface-hover hover:text-content-primary rounded-lg h-9 w-9 min-h-[36px] min-w-[36px]',
+    // Hero: reserved for primary CTAs only — purple→pink→orange gradient
+    hero: 'bg-gradient-to-r from-[#a855f7] via-[#ec4899] to-[#f97316] text-white shadow-elevated hover:opacity-90 hover:shadow-glow',
   };
 
   return (
@@ -277,7 +279,7 @@ export interface ProgressBarProps extends HTMLAttributes<HTMLDivElement> {
   value: number;
   max?: number;
   size?: 'xs' | 'sm' | 'md';
-  variant?: 'brand' | 'violet' | 'success' | 'amber';
+  variant?: 'brand' | 'violet' | 'success' | 'amber' | 'data' | 'reward';
   label?: string;
 }
 
@@ -299,10 +301,13 @@ export function ProgressBar({
   };
 
   const variantStyles = {
-    brand: 'bg-gradient-to-r from-sky-500 to-cyan-400',
-    violet: 'bg-gradient-to-r from-violet-500 to-fuchsia-400',
+    brand:   'bg-gradient-to-r from-indigo-500 to-violet-500',
+    violet:  'bg-gradient-to-r from-violet-500 to-fuchsia-400',
     success: 'bg-gradient-to-r from-emerald-500 to-teal-400',
-    amber: 'bg-gradient-to-r from-amber-500 to-orange-400',
+    amber:   'bg-gradient-to-r from-amber-500 to-orange-400',
+    // New semantic variants
+    data:    'bg-gradient-to-r from-teal-500 to-cyan-400',
+    reward:  'bg-gradient-to-r from-amber-400 to-yellow-300',
   };
 
   return (
@@ -530,7 +535,7 @@ export function Textarea({ error, className = '', ...props }: TextareaHTMLAttrib
 
 export interface BadgeProps {
   children: ReactNode;
-  variant?: 'primary' | 'neutral' | 'success' | 'warning' | 'danger' | 'ai-accent';
+  variant?: 'primary' | 'neutral' | 'success' | 'warning' | 'danger' | 'ai-accent' | 'reward' | 'data';
   size?: 'sm' | 'md';
   className?: string;
 }
@@ -542,12 +547,16 @@ export function Badge({ children, variant = 'neutral', size = 'sm', className = 
   };
 
   const variantStyles = {
-    neutral: 'bg-surface-elevated text-content-secondary border border-border-subtle',
-    primary: 'bg-brand-subtle text-brand border border-brand-border',
-    success: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20',
-    warning: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20',
-    danger: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20',
-    'ai-accent': 'bg-gradient-to-r from-sky-500/15 to-cyan-500/15 text-sky-600 dark:text-sky-300 border border-sky-400/30 shadow-subtle',
+    neutral:    'bg-surface-elevated text-content-secondary border border-border-subtle',
+    primary:    'bg-brand-subtle text-brand border border-brand-border',
+    success:    'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20',
+    warning:    'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20',
+    danger:     'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20',
+    // Updated ai-accent: indigo-violet family
+    'ai-accent': 'bg-gradient-to-r from-indigo-500/15 to-violet-500/15 text-indigo-600 dark:text-indigo-300 border border-indigo-400/30 shadow-subtle',
+    // New semantic variants
+    reward:     'bg-amber-500/12 text-amber-600 dark:text-amber-300 border border-amber-400/25',
+    data:       'bg-teal-500/10 text-teal-600 dark:text-teal-300 border border-teal-400/25',
   };
 
   return (
@@ -745,6 +754,26 @@ function getInitials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+export function CollapseSidebarIcon({ className = 'w-4 h-4', collapsed = false }: { className?: string; collapsed?: boolean }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {collapsed ? (
+        <>
+          <rect width="18" height="18" x="3" y="3" rx="2" />
+          <path d="M9 3v18" />
+          <path d="m14 15 3-3-3-3" />
+        </>
+      ) : (
+        <>
+          <rect width="18" height="18" x="3" y="3" rx="2" />
+          <path d="M9 3v18" />
+          <path d="m16 9-3 3 3 3" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 export const AppShell = ({
   children,
   pathname,
@@ -754,6 +783,29 @@ export const AppShell = ({
   onToggleTheme,
 }: AppShellProps) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  // Restore collapsed state from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('techseeker_sidebar_collapsed');
+      if (saved !== null) {
+        setIsCollapsed(saved === 'true');
+      }
+    } catch {}
+    setIsHydrated(true);
+  }, []);
+
+  const handleToggleCollapse = () => {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('techseeker_sidebar_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   // Close mobile drawer on ESC key
   const handleKeyDown = useCallback(
@@ -770,34 +822,51 @@ export const AppShell = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  const sidebarContent = (
-    <div className="flex h-full flex-col justify-between select-none">
+  const renderSidebarContent = (isRail: boolean) => (
+    <div className="flex h-full flex-col justify-between select-none overflow-hidden">
       {/* Brand Header */}
-      <div className="shrink-0 border-b border-border-subtle px-4 py-3.5 sm:px-5 sm:py-4">
-        <div className="flex items-center justify-between">
-          <a href="/" className="flex items-center gap-2.5 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand rounded-lg p-0.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-sky-400 to-cyan-500 text-sm font-bold text-slate-950 shadow-subtle group-hover:scale-105 transition-transform shrink-0">
+      <div className={`shrink-0 border-b border-border-subtle ${isRail ? 'p-3 flex flex-col items-center gap-2' : 'px-4 py-3.5 sm:px-5 sm:py-4'}`}>
+        <div className={`flex items-center ${isRail ? 'flex-col gap-2' : 'justify-between w-full'}`}>
+          <a
+            href="/"
+            className="flex items-center gap-2.5 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand rounded-lg p-0.5"
+            title={isRail ? 'TechSeeker' : undefined}
+          >
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 text-sm font-bold text-white shadow-subtle group-hover:scale-105 transition-transform shrink-0">
               T
             </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <h1 className="text-sm font-bold tracking-tight text-content-primary">
-                  TechSeeker
-                </h1>
-                <span className="rounded bg-brand-subtle px-1 py-0.2 text-[8px] font-bold text-brand uppercase tracking-wider">
-                  RC
-                </span>
+            {!isRail && (
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <h1 className="text-sm font-bold tracking-tight text-content-primary">
+                    TechSeeker
+                  </h1>
+                  <span className="rounded bg-brand-subtle px-1 py-0.2 text-[8px] font-bold text-brand uppercase tracking-wider">
+                    PRO
+                  </span>
+                </div>
+                <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-content-muted truncate">
+                  AI Learning System
+                </p>
               </div>
-              <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-content-muted truncate">
-                Learning System
-              </p>
-            </div>
+            )}
           </a>
 
-          <div className="flex items-center gap-1">
+          <div className={`flex items-center ${isRail ? 'flex-col gap-1.5' : 'gap-1'}`}>
             {onToggleTheme && (
               <ThemeToggle theme={theme} onToggle={onToggleTheme} />
             )}
+
+            {/* Desktop Collapse Toggle */}
+            <button
+              type="button"
+              onClick={handleToggleCollapse}
+              className="hidden md:flex h-7 w-7 items-center justify-center rounded-lg border border-border-subtle text-content-muted hover:border-brand-border hover:bg-surface-hover hover:text-content-primary transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+              title={isRail ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-label={isRail ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              <CollapseSidebarIcon className="w-3.5 h-3.5" collapsed={isRail} />
+            </button>
 
             {/* Mobile close button */}
             <button
@@ -813,12 +882,14 @@ export const AppShell = ({
       </div>
 
       {/* Navigation Groups */}
-      <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-4" aria-label="Main navigation">
+      <nav className={`flex-1 min-h-0 overflow-y-auto ${isRail ? 'px-2 py-3 space-y-3' : 'px-3 py-3 space-y-4'}`} aria-label="Main navigation">
         {navigationGroups.map((group) => (
           <div key={group.title} className="space-y-1">
-            <p className="px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-content-muted">
-              {group.title}
-            </p>
+            {!isRail && (
+              <p className="px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-content-muted transition-opacity">
+                {group.title}
+              </p>
+            )}
 
             <div className="space-y-0.5">
               {group.items.map((item) => {
@@ -828,35 +899,51 @@ export const AppShell = ({
                     : pathname.startsWith(item.href);
 
                 return (
-                  <a
-                    key={item.label}
-                    href={item.href}
-                    onClick={() => setMobileMenuOpen(false)}
-                    aria-current={active ? 'page' : undefined}
-                    className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium min-h-[40px] transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
-                      active
-                        ? 'bg-brand-subtle text-brand font-semibold shadow-subtle border-l-2 border-brand pl-2.5'
-                        : 'text-content-secondary hover:bg-surface-hover hover:text-content-primary'
-                    }`}
-                  >
-                    <span
-                      className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors shrink-0 ${
+                  <div key={item.label} className="relative group/navitem">
+                    <a
+                      href={item.href}
+                      onClick={() => setMobileMenuOpen(false)}
+                      aria-current={active ? 'page' : undefined}
+                      className={`relative flex items-center ${isRail ? 'justify-center w-10 h-10 mx-auto p-0 rounded-xl' : 'gap-3 px-3 py-2.5 rounded-lg min-h-[40px]'} text-xs font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
                         active
-                          ? 'text-brand'
-                          : 'text-content-muted group-hover:text-content-primary'
+                          ? 'bg-brand-subtle text-brand font-semibold shadow-subtle border-l-2 border-brand ' + (isRail ? 'border-l-0 ring-1 ring-brand' : 'pl-2.5')
+                          : 'text-content-secondary hover:bg-surface-hover hover:text-content-primary'
                       }`}
                     >
-                      {item.icon}
-                    </span>
-
-                    <span className="truncate">{item.label}</span>
-
-                    {item.badge && (
-                      <span className="ml-auto rounded-full bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.2 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 shrink-0">
-                        {item.badge}
+                      <span
+                        className={`flex items-center justify-center transition-colors shrink-0 ${
+                          active
+                            ? 'text-brand'
+                            : 'text-content-muted group-hover/navitem:text-content-primary'
+                        }`}
+                      >
+                        {item.icon}
                       </span>
+
+                      {!isRail && (
+                        <>
+                          <span className="truncate">{item.label}</span>
+                          {item.badge && (
+                            <span className="ml-auto rounded-full bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.2 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 shrink-0">
+                              {item.badge}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </a>
+
+                    {/* Floating Tooltip in Rail Mode */}
+                    {isRail && (
+                      <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 z-50 hidden group-hover/navitem:flex items-center gap-1.5 px-2.5 py-1 bg-surface-elevated text-content-primary border border-border rounded-lg shadow-elevated text-xs font-medium whitespace-nowrap pointer-events-none animate-fade-in">
+                        <span>{item.label}</span>
+                        {item.badge && (
+                          <span className="rounded bg-emerald-500/10 border border-emerald-500/20 px-1 text-[8px] font-bold text-emerald-500">
+                            {item.badge}
+                          </span>
+                        )}
+                      </div>
                     )}
-                  </a>
+                  </div>
                 );
               })}
             </div>
@@ -865,44 +952,79 @@ export const AppShell = ({
       </nav>
 
       {/* User Profile & Logout (Pinned Bottom) */}
-      <div className="shrink-0 border-t border-border-subtle p-3 bg-surface">
+      <div className={`shrink-0 border-t border-border-subtle bg-surface ${isRail ? 'p-2 flex flex-col items-center gap-2' : 'p-3'}`}>
         {user ? (
-          <div className="flex items-center justify-between rounded-lg border border-border-subtle bg-surface-elevated p-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-[10px] font-bold text-white shadow-subtle">
+          isRail ? (
+            <div className="relative group/user flex flex-col items-center gap-1">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-[11px] font-bold text-white shadow-subtle cursor-pointer">
                 {getInitials(user.full_name)}
               </div>
+              {onLogout && (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  title="Sign out"
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-content-muted hover:text-status-danger hover:bg-status-danger/10 transition"
+                  aria-label="Sign out"
+                >
+                  <LogoutIcon className="w-3.5 h-3.5" />
+                </button>
+              )}
 
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-medium text-content-primary">
-                  {user.full_name}
-                </p>
-                <p className="truncate text-[10px] text-content-muted" title={user.email}>
-                  {user.email}
-                </p>
+              {/* User Tooltip */}
+              <div className="absolute left-full bottom-2 ml-2 z-50 hidden group-hover/user:flex flex-col px-3 py-1.5 bg-surface-elevated text-content-primary border border-border rounded-lg shadow-elevated text-xs whitespace-nowrap pointer-events-none animate-fade-in">
+                <span className="font-semibold">{user.full_name}</span>
+                <span className="text-[10px] text-content-muted">{user.email}</span>
               </div>
             </div>
+          ) : (
+            <div className="flex items-center justify-between rounded-lg border border-border-subtle bg-surface-elevated p-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-[10px] font-bold text-white shadow-subtle">
+                  {getInitials(user.full_name)}
+                </div>
 
-            {onLogout && (
-              <button
-                type="button"
-                onClick={onLogout}
-                title="Sign out"
-                className="ml-1.5 flex h-7 w-7 min-h-[28px] min-w-[28px] shrink-0 items-center justify-center rounded-md border border-border-subtle bg-surface text-content-muted transition hover:border-status-danger/30 hover:bg-status-danger/10 hover:text-status-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-danger"
-                aria-label="Sign out"
-              >
-                <LogoutIcon className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium text-content-primary">
+                    {user.full_name}
+                  </p>
+                  <p className="truncate text-[10px] text-content-muted" title={user.email}>
+                    {user.email}
+                  </p>
+                </div>
+              </div>
+
+              {onLogout && (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  title="Sign out"
+                  className="ml-1.5 flex h-7 w-7 min-h-[28px] min-w-[28px] shrink-0 items-center justify-center rounded-md border border-border-subtle bg-surface text-content-muted transition hover:border-status-danger/30 hover:bg-status-danger/10 hover:text-status-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-danger"
+                  aria-label="Sign out"
+                >
+                  <LogoutIcon className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )
         ) : (
-          <a
-            href="/login"
-            className="flex items-center justify-center gap-2 rounded-lg border border-brand-border bg-brand-subtle px-3 py-2 text-xs font-semibold text-brand transition hover:bg-brand-hover hover:text-content-inverse focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand min-h-[36px]"
-          >
-            <span>Sign in</span>
-            <span>→</span>
-          </a>
+          isRail ? (
+            <a
+              href="/login"
+              title="Sign in"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-brand-border bg-brand-subtle text-xs font-bold text-brand hover:bg-brand hover:text-content-inverse transition"
+            >
+              →
+            </a>
+          ) : (
+            <a
+              href="/login"
+              className="flex items-center justify-center gap-2 rounded-lg border border-brand-border bg-brand-subtle px-3 py-2 text-xs font-semibold text-brand transition hover:bg-brand-hover hover:text-content-inverse focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand min-h-[36px]"
+            >
+              <span>Sign in</span>
+              <span>→</span>
+            </a>
+          )
         )}
       </div>
     </div>
@@ -910,9 +1032,13 @@ export const AppShell = ({
 
   return (
     <div className="relative flex h-screen w-screen overflow-hidden bg-canvas text-content-primary">
-      {/* Desktop Sidebar (Fixed viewport height) */}
-      <aside className="relative z-20 hidden h-full w-[240px] shrink-0 border-r border-border-subtle bg-surface md:flex md:flex-col">
-        {sidebarContent}
+      {/* Desktop Sidebar (Collapsible Rail) */}
+      <aside
+        className={`relative z-20 hidden h-full shrink-0 border-r border-border-subtle bg-surface md:flex md:flex-col sidebar-transition ${
+          isCollapsed ? 'w-[68px]' : 'w-[240px]'
+        }`}
+      >
+        {renderSidebarContent(isCollapsed)}
       </aside>
 
       {/* Mobile Drawer (Accessible Dialog) */}
@@ -928,8 +1054,8 @@ export const AppShell = ({
             onClick={() => setMobileMenuOpen(false)}
             aria-hidden="true"
           />
-          <div className="relative flex h-full w-[260px] max-w-[85vw] flex-col border-r border-border-subtle bg-surface shadow-elevated z-10">
-            {sidebarContent}
+          <div className="relative flex h-full w-[260px] max-w-[85vw] flex-col border-r border-border-subtle bg-surface shadow-elevated z-10 animate-fade-in">
+            {renderSidebarContent(false)}
           </div>
         </div>
       )}
@@ -957,7 +1083,7 @@ export const AppShell = ({
               <ThemeToggle theme={theme} onToggle={onToggleTheme} />
             )}
             {user && (
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-[10px] font-bold text-white">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-[10px] font-bold text-white">
                 {getInitials(user.full_name)}
               </div>
             )}

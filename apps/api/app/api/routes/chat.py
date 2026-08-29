@@ -74,6 +74,24 @@ def get_conversation_detail(
     )
 
 
+@router.delete(
+    "/conversations/{conversation_id}",
+    status_code=200,
+)
+def delete_conversation(
+    conversation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    chat_service.delete_conversation(
+        db=db,
+        user=current_user,
+        conversation_id=conversation_id,
+    )
+    return {"detail": "Conversation deleted successfully", "id": conversation_id}
+
+
+
 @router.post(
     "/conversations/{conversation_id}/messages",
     response_model=ChatResponse,

@@ -47,6 +47,20 @@ export function getConversationDetail(
   );
 }
 
+export function deleteConversation(
+  token: string,
+  conversationId: number,
+): Promise<{ detail: string; id: number }> {
+  return apiRequest<{ detail: string; id: number }>(
+    `/chat/conversations/${conversationId}`,
+    {
+      method: 'DELETE',
+      token,
+    },
+  );
+}
+
+
 export function sendMessage(
   token: string,
   conversationId: number,
