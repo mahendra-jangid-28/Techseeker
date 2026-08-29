@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.0.0] - 2026-08-29
+
+### Production MVP Release (Sprints 1–17 Complete)
+
+- **Interactive Challenges & Real-Time AI Code Review (Sprint 12-13)**
+  - Algorithm and application coding challenges across multiple difficulty levels.
+  - Automated code review with static analysis, complexity scoring, and step-by-step AI debugger.
+- **Project Workspace & Multi-Milestone Evaluation (Sprint 14-15)**
+  - Real-world portfolio project workspace with live preview, multi-file code editor, and milestone progression.
+  - Automatic project validation and rubric-based code scoring.
+- **Admin Dashboard & Observability (Sprint 16)**
+  - Administrative oversight, learner performance metrics, and AI request token cache management.
+  - Rate limiting, security headers, and request tracking observability.
+- **Digital Certificates & Verification (Sprint 17)**
+  - Cryptographically verifiable course and track completion certificates.
+  - Public certificate verification portal with unique verification codes.
+- **Design System & Visual Polish**
+  - Polished modern UI with glassmorphism, responsive navigation, dark/light theme switching, and robust error boundaries.
+
+---
+
 ## [v0.1.0-alpha] - 2026-08-25
 
 ### Features & Capabilities

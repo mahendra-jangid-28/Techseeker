@@ -1,8 +1,11 @@
+import logging
 from google import genai
 from google.genai.errors import APIError, ClientError, ServerError
 
 from app.core.config import settings
 from app.services.system_prompt_service import get_system_prompt
+
+logger = logging.getLogger("techseeker.gemini")
 
 
 class GeminiProvider:
@@ -47,7 +50,7 @@ class GeminiProvider:
                 last_error = e
                 status_code = getattr(e, "status", None)
 
-                print(
+                logger.warning(
                     f"Gemini API attempt {index}/{len(self.api_keys)} failed "
                     f"with status {status_code}: {e}"
                 )
@@ -60,7 +63,7 @@ class GeminiProvider:
             except Exception as e:
                 last_error = e
 
-                print(
+                logger.error(
                     f"Gemini API attempt {index}/{len(self.api_keys)} "
                     f"failed with unexpected error: {e}"
                 )
@@ -76,6 +79,7 @@ class GeminiProvider:
     ):
         last_error = None
         instruction = system_instruction or get_system_prompt()
+        stream_started = False
 
         for index, api_key in enumerate(self.api_keys, start=1):
             try:
@@ -93,6 +97,7 @@ class GeminiProvider:
 
                 for chunk in response:
                     if chunk.text:
+                        stream_started = True
                         yield chunk.text
 
                 return
@@ -101,10 +106,13 @@ class GeminiProvider:
                 last_error = e
                 status_code = getattr(e, "status", None)
 
-                print(
+                logger.warning(
                     f"Gemini API stream attempt {index}/{len(self.api_keys)} failed "
                     f"with status {status_code}: {e}"
                 )
+
+                if stream_started:
+                    raise
 
                 if status_code in {400}:
                     raise
@@ -114,7 +122,7 @@ class GeminiProvider:
             except Exception as e:
                 last_error = e
 
-                print(
+                logger.error(
                     f"Gemini API stream attempt {index}/{len(self.api_keys)} "
                     f"failed with unexpected error: {e}"
                 )

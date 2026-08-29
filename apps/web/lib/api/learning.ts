@@ -37,6 +37,18 @@ export type MiniProject = {
   requirements: string[];
 };
 
+export type TopicSearchCard = {
+  title: string;
+  slug: string;
+  category: string;
+  description: string;
+};
+
+export type TopicSearchResponse = {
+  query: string;
+  results: TopicSearchCard[];
+};
+
 export type LearningResponse = {
   topic: string;
   why_learn_this: string;
@@ -52,8 +64,24 @@ export type LearningResponse = {
   assignment: Assignment;
   mini_project: MiniProject;
   related_topics: string[];
+  summary?: string;
   next_topic: string;
+  cached?: boolean;
 };
+
+export async function searchKnowledgeTopics(
+  query: string,
+  token?: string,
+): Promise<TopicSearchResponse> {
+  const authToken = token ?? getToken();
+  const params = new URLSearchParams();
+  if (query) params.append('q', query);
+
+  return apiRequest<TopicSearchResponse>(`/learning/search?${params.toString()}`, {
+    method: 'GET',
+    token: authToken || undefined,
+  });
+}
 
 export async function generateLearningContent(
   data: LearningRequest,

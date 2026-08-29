@@ -30,8 +30,16 @@ env/
 venv/
 ENV/
 
+# Turbo
+.turbo/
+.turbo
+
+# Coverage & Tests
+.coverage
+
 # Logs & Temporary
 *.log
 *.tmp
 .DS_Store
 Thumbs.db
+

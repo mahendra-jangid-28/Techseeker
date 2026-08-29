@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import type { Route } from 'next';
 import { AppShell } from '@techseeker/ui';
 import { clearToken, getCurrentUser, getToken, type UserResponse } from '../lib/api/auth';
+import { useTheme } from './ThemeProvider';
 
 export default function AppShellWrapper({
   children,
@@ -14,6 +15,7 @@ export default function AppShellWrapper({
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<UserResponse | null>(null);
+  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +67,8 @@ export default function AppShellWrapper({
       pathname={pathname}
       user={user}
       onLogout={handleLogout}
+      theme={theme}
+      onToggleTheme={toggleTheme}
     >
       {children}
     </AppShell>

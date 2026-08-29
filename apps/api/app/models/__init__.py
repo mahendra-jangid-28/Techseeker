@@ -17,6 +17,8 @@ from app.models.lesson import (
 from app.models.user_memory import UserMemory
 from app.models.weak_topic import WeakTopic
 from app.models.study_recommendation import StudyRecommendation
+from app.models.ai_cache import AICache
+from app.models.certificate import Certificate
 
 __all__ = [
     "User",
@@ -34,4 +36,6 @@ __all__ = [
     "UserMemory",
     "WeakTopic",
     "StudyRecommendation",
+    "AICache",
+    "Certificate",
 ]

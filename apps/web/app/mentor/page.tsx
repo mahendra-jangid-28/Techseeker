@@ -11,23 +11,46 @@ import {
   regenerateMessage,
   sendStreamingMessage,
 } from '../../lib/api/chat';
-
-
 import type { Conversation, Message } from '../../lib/types/chat';
 import { MarkdownRenderer } from '../../components/MarkdownRenderer';
+import { Button, ContentCallout } from '@techseeker/ui';
 
-const suggestions = [
-  'Explain this concept simply',
-  'Help me debug my code',
-  'Create a learning roadmap',
-  'Quiz me on a topic',
+const SUGGESTIONS = [
+  {
+    title: 'Explain JavaScript Closures',
+    prompt: 'Explain closures with a practical real-world example and common pitfalls.',
+    icon: '⚡',
+  },
+  {
+    title: 'Debug Code & Edge Cases',
+    prompt: 'Help me debug this error and identify unhandled edge cases in my implementation.',
+    icon: '🔍',
+  },
+  {
+    title: 'React Server Components Internals',
+    prompt: 'How do React Server Components work under the hood compared to Client Components?',
+    icon: '⚛️',
+  },
+  {
+    title: '30-Day DSA Mastery Plan',
+    prompt: 'Create a structured 30-day DSA learning strategy focusing on core patterns.',
+    icon: '🗺️',
+  },
+  {
+    title: 'Database Indexing & B-Trees',
+    prompt: 'Explain how database B-Tree indexing works and how to optimize slow queries.',
+    icon: '🗄️',
+  },
+  {
+    title: 'Async/Await vs Promises',
+    prompt: 'Break down how JavaScript async/await executes in the event loop compared to Promises.',
+    icon: '🔄',
+  },
 ];
 
 function isAuthError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
-
   const message = error.message.toLowerCase();
-
   return (
     message.includes('credentials') ||
     message.includes('unauthorized') ||
@@ -35,21 +58,44 @@ function isAuthError(error: unknown): boolean {
   );
 }
 
+function formatDate(isoString: string): string {
+  try {
+    const date = new Date(isoString);
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+    });
+  } catch {
+    return '';
+  }
+}
+
 export default function MentorPage() {
   const router = useRouter();
   const [message, setMessage] = useState('');
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<
-    number | null
-  >(null);
+  const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [creatingConversation, setCreatingConversation] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const activeConversationIdRef = useRef<number | null>(null);
+  const [copiedMessageId, setCopiedMessageId] = useState<number | null>(null);
+  const [threadsDrawerOpen, setThreadsDrawerOpen] = useState(false);
 
+  const activeConversationIdRef = useRef<number | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Sync ref with state
+  useEffect(() => {
+    activeConversationIdRef.current = activeConversationId;
+  }, [activeConversationId]);
+
+  // Load conversation list on mount
   useEffect(() => {
     const token = getToken();
 
@@ -63,7 +109,6 @@ export default function MentorPage() {
     async function loadConversations() {
       try {
         const data = await getConversations(authToken);
-
         setConversations(data);
 
         if (data.length > 0) {
@@ -77,9 +122,7 @@ export default function MentorPage() {
         }
 
         setLoadError(
-          error instanceof Error
-            ? error.message
-            : 'Failed to load conversations',
+          error instanceof Error ? error.message : 'Failed to load conversations',
         );
       } finally {
         setLoadingConversations(false);
@@ -89,6 +132,7 @@ export default function MentorPage() {
     loadConversations();
   }, [router]);
 
+  // Load message detail when active conversation changes
   useEffect(() => {
     if (activeConversationId === null) {
       setMessages([]);
@@ -104,7 +148,6 @@ export default function MentorPage() {
     }
 
     const authToken = token;
-
     let cancelled = false;
 
     async function loadConversationDetail() {
@@ -114,13 +157,10 @@ export default function MentorPage() {
 
       try {
         const detail = await getConversationDetail(authToken, conversationId);
-
         if (cancelled) return;
-
         setMessages(detail.messages);
       } catch (error) {
         if (cancelled) return;
-
         if (isAuthError(error)) {
           clearToken();
           router.replace('/login' as Route);
@@ -128,9 +168,7 @@ export default function MentorPage() {
         }
 
         setLoadError(
-          error instanceof Error
-            ? error.message
-            : 'Failed to load conversation',
+          error instanceof Error ? error.message : 'Failed to load conversation messages',
         );
       } finally {
         if (!cancelled) {
@@ -146,26 +184,65 @@ export default function MentorPage() {
     };
   }, [activeConversationId, router]);
 
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
-
+  // Auto-scroll on new message chunks
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, sendingMessage]);
+  }, [messages, sendingMessage, isRegenerating]);
 
-  async function sendMessage() {
-    const trimmedMessage = message.trim();
+  async function startNewConversation() {
+    if (creatingConversation) return;
 
+    const token = getToken();
+    if (!token) {
+      router.replace('/login' as Route);
+      return;
+    }
+
+    setCreatingConversation(true);
+    setLoadError(null);
+
+    try {
+      const newConversation = await createConversation(token);
+      setConversations((current) => [newConversation, ...current]);
+      setActiveConversationId(newConversation.id);
+      setMessage('');
+      textareaRef.current?.focus();
+    } catch (error) {
+      if (isAuthError(error)) {
+        clearToken();
+        router.replace('/login' as Route);
+        return;
+      }
+
+      setLoadError(
+        error instanceof Error ? error.message : 'Failed to create conversation',
+      );
+    } finally {
+      setCreatingConversation(false);
+    }
+  }
+
+  function selectConversation(conversationId: number) {
+    if (conversationId === activeConversationId) return;
+    setActiveConversationId(conversationId);
+    setMessage('');
+    setThreadsDrawerOpen(false);
+    textareaRef.current?.focus();
+  }
+
+  async function handleSendMessage() {
+    const trimmed = message.trim();
     if (
-      !trimmedMessage ||
+      !trimmed ||
       activeConversationId === null ||
       sendingMessage ||
-      loadingMessages
+      loadingMessages ||
+      isRegenerating
     ) {
       return;
     }
 
     const token = getToken();
-
     if (!token) {
       router.replace('/login' as Route);
       return;
@@ -173,14 +250,13 @@ export default function MentorPage() {
 
     const conversationId = activeConversationId;
     const wasNewChat =
-      conversations.find((conversation) => conversation.id === conversationId)
-        ?.title === 'New Chat';
+      conversations.find((c) => c.id === conversationId)?.title === 'New Chat';
 
     const userMsgId = Date.now();
     const userMsg: Message = {
       id: userMsgId,
       role: 'user',
-      content: trimmedMessage,
+      content: trimmed,
       created_at: new Date().toISOString(),
     };
 
@@ -192,33 +268,29 @@ export default function MentorPage() {
       created_at: new Date().toISOString(),
     };
 
-    setMessages((currentMessages) => [
-      ...currentMessages,
-      userMsg,
-      assistantMsg,
-    ]);
+    setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setMessage('');
     setSendingMessage(true);
     setLoadError(null);
 
     try {
-      await sendStreamingMessage(token, conversationId, trimmedMessage, {
+      await sendStreamingMessage(token, conversationId, trimmed, {
         onChunk: (chunk: string) => {
           if (activeConversationIdRef.current !== conversationId) return;
-          setMessages((currentMessages) =>
-            currentMessages.map((msg) =>
+          setMessages((current) =>
+            current.map((msg) =>
               msg.id === assistantMsgId
                 ? { ...msg, content: msg.content + chunk }
-                : msg
-            )
+                : msg,
+            ),
           );
         },
         onComplete: async () => {
           setSendingMessage(false);
           if (wasNewChat) {
-            const updatedConversations = await getConversations(token);
+            const updated = await getConversations(token);
             if (activeConversationIdRef.current === conversationId) {
-              setConversations(updatedConversations);
+              setConversations(updated);
             }
           }
         },
@@ -229,18 +301,15 @@ export default function MentorPage() {
             return;
           }
           setLoadError(
-            error instanceof Error ? error.message : 'Failed to send message',
+            error instanceof Error ? error.message : 'Failed to stream response',
           );
           setSendingMessage(false);
         },
       });
-    } catch (error) {
+    } catch {
       setSendingMessage(false);
     }
   }
-
-
-  const [isRegenerating, setIsRegenerating] = useState(false);
 
   async function handleRegenerate(assistantMessageId: number) {
     if (
@@ -264,20 +333,16 @@ export default function MentorPage() {
     const previousContent = messages.find((m) => m.id === assistantMessageId)?.content;
     setMessages((prev) =>
       prev.map((msg) =>
-        msg.id === assistantMessageId
-          ? { ...msg, content: '' }
-          : msg
-      )
+        msg.id === assistantMessageId ? { ...msg, content: '' } : msg,
+      ),
     );
 
     try {
       const regeneratedMsg = await regenerateMessage(token, assistantMessageId);
       setMessages((prev) =>
         prev.map((msg) =>
-          msg.id === assistantMessageId
-            ? regeneratedMsg
-            : msg
-        )
+          msg.id === assistantMessageId ? regeneratedMsg : msg,
+        ),
       );
     } catch (error) {
       if (isAuthError(error)) {
@@ -291,10 +356,8 @@ export default function MentorPage() {
       if (previousContent) {
         setMessages((prev) =>
           prev.map((msg) =>
-            msg.id === assistantMessageId
-              ? { ...msg, content: previousContent }
-              : msg
-          )
+            msg.id === assistantMessageId ? { ...msg, content: previousContent } : msg,
+          ),
         );
       }
     } finally {
@@ -302,142 +365,143 @@ export default function MentorPage() {
     }
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    sendMessage();
+  function handleCopyResponse(msgId: number, content: string) {
+    if (!content) return;
+    navigator.clipboard.writeText(content);
+    setCopiedMessageId(msgId);
+    setTimeout(() => {
+      setCopiedMessageId((current) => (current === msgId ? null : current));
+    }, 2000);
   }
 
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    handleSendMessage();
+  }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      if (!sendingMessage) {
-        sendMessage();
+      if (!sendingMessage && !isRegenerating) {
+        handleSendMessage();
       }
     }
   }
 
-  function handleSuggestion(suggestion: string) {
-    setMessage(suggestion);
+  function handleSuggestionClick(promptText: string) {
+    setMessage(promptText);
+    textareaRef.current?.focus();
   }
 
-  async function startNewConversation() {
-    if (creatingConversation) return;
+  const activeConversation = conversations.find((c) => c.id === activeConversationId);
+  const activeTitle = activeConversation?.title || (loadingConversations ? 'Loading...' : 'AI Mentor');
 
-    const token = getToken();
+  const latestAssistantMessageId = [...messages]
+    .reverse()
+    .find((m) => m.role === 'assistant')?.id;
 
-    if (!token) {
-      router.replace('/login' as Route);
-      return;
-    }
-
-    setCreatingConversation(true);
-    setLoadError(null);
-
-    try {
-      const newConversation = await createConversation(token);
-
-      setConversations((currentConversations) => [
-        newConversation,
-        ...currentConversations,
-      ]);
-      setActiveConversationId(newConversation.id);
-      setMessage('');
-    } catch (error) {
-      if (isAuthError(error)) {
-        clearToken();
-        router.replace('/login' as Route);
-        return;
-      }
-
-      setLoadError(
-        error instanceof Error
-          ? error.message
-          : 'Failed to create conversation',
-      );
-    } finally {
-      setCreatingConversation(false);
-    }
-  }
-
-  const [threadsDrawerOpen, setThreadsDrawerOpen] = useState(false);
-
-  function selectConversation(conversationId: number) {
-    if (conversationId === activeConversationId) return;
-
-    setActiveConversationId(conversationId);
-    setMessage('');
-    setThreadsDrawerOpen(false);
-  }
-
-  const threadListContent = (
-    <div className="flex h-full flex-col justify-between min-h-0">
+  // Sidebar thread list content
+  const sidebarContent = (
+    <div className="flex h-full flex-col justify-between select-none">
       <div className="flex flex-col min-h-0 flex-1">
-        <div className="mb-4 flex items-center justify-between px-2">
-          <div className="flex items-center gap-2.5">
-            <div className="relative flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 to-cyan-500 text-xs font-bold text-slate-950 shadow-md">
-              TS
-              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-emerald-400" />
+        {/* Workspace Brand Header */}
+        <div className="flex items-center justify-between px-3 py-3.5 border-b border-border-subtle">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="flex h-6 w-6 items-center justify-center rounded-md bg-brand-subtle text-brand font-bold text-xs border border-brand-border">
+                ⚡
+              </span>
+              <h2 className="text-xs font-bold text-content-primary tracking-tight uppercase">
+                AI Mentor Workspace
+              </h2>
             </div>
-            <div>
-              <h2 className="text-xs font-bold text-white tracking-tight">AI Mentor</h2>
-              <p className="text-[9px] uppercase tracking-wider text-sky-400/80">Threads</p>
-            </div>
+            <p className="text-[10px] text-content-muted mt-0.5">
+              Technical pair programming & guidance
+            </p>
           </div>
 
           <button
             type="button"
             onClick={() => setThreadsDrawerOpen(false)}
-            className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.08] text-slate-400 hover:text-white lg:hidden"
-            aria-label="Close threads"
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-border-subtle text-content-muted hover:text-content-primary lg:hidden"
+            aria-label="Close threads panel"
           >
             ✕
           </button>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            startNewConversation();
-            setThreadsDrawerOpen(false);
-          }}
-          disabled={creatingConversation}
-          className="flex items-center gap-2.5 rounded-xl border border-sky-400/20 bg-sky-400/[0.06] px-3.5 py-2.5 text-left text-xs font-medium text-sky-300 transition hover:bg-sky-400/[0.12] disabled:opacity-60"
-        >
-          <span className="flex h-5 w-5 items-center justify-center rounded-md bg-sky-400/15 text-xs font-bold">
-            +
-          </span>
-          <span>{creatingConversation ? 'Creating...' : 'New chat'}</span>
-        </button>
+        {/* Action Button */}
+        <div className="p-3">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              startNewConversation();
+              setThreadsDrawerOpen(false);
+            }}
+            disabled={creatingConversation}
+            isLoading={creatingConversation}
+            className="w-full justify-center text-xs font-semibold shadow-subtle"
+          >
+            + New Chat
+          </Button>
+        </div>
 
-        {/* Conversation list */}
-        <div className="mt-4 flex-1 min-h-0 overflow-y-auto space-y-1 pr-1">
+        {/* Conversation List */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-2 py-1 space-y-1">
+          <div className="px-2 py-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-content-muted">
+            <span>Conversations</span>
+            <span className="font-mono text-[9px]">{conversations.length}</span>
+          </div>
+
           {loadingConversations ? (
-            <p className="px-3 py-2 text-xs text-slate-500">Loading conversations...</p>
+            <div className="space-y-1.5 p-2">
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="h-9 w-full animate-pulse rounded-lg bg-surface-elevated"
+                />
+              ))}
+            </div>
+          ) : conversations.length === 0 ? (
+            <div className="p-4 text-center">
+              <p className="text-xs text-content-muted">No conversations yet.</p>
+              <p className="text-[10px] text-content-muted mt-1">
+                Start a new chat to begin pairing.
+              </p>
+            </div>
           ) : (
             conversations.map((conv) => {
               const isActive = conv.id === activeConversationId;
+              const formatted = conv.created_at ? formatDate(conv.created_at) : '';
+
               return (
                 <button
                   key={conv.id}
                   type="button"
                   onClick={() => selectConversation(conv.id)}
-                  className={`group flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-xs transition ${
+                  className={`group flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-all duration-150 ${
                     isActive
-                      ? 'border border-sky-400/20 bg-sky-400/[0.08] text-sky-200 font-medium'
-                      : 'border border-transparent text-slate-400 hover:bg-white/[0.04] hover:text-slate-200'
+                      ? 'bg-brand-subtle text-brand font-semibold shadow-subtle border-l-2 border-brand pl-2'
+                      : 'text-content-secondary hover:bg-surface-hover hover:text-content-primary'
                   }`}
                 >
-                  <span
-                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[10px] ${
-                      isActive
-                        ? 'bg-sky-400/15 text-sky-300'
-                        : 'bg-white/[0.04] text-slate-500 group-hover:text-slate-300'
-                    }`}
-                  >
-                    #
-                  </span>
-                  <span className="truncate flex-1">{conv.title}</span>
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <span
+                      className={`font-mono text-[11px] shrink-0 ${
+                        isActive ? 'text-brand' : 'text-content-muted'
+                      }`}
+                    >
+                      #
+                    </span>
+                    <span className="truncate flex-1">{conv.title}</span>
+                  </div>
+
+                  {formatted && (
+                    <span className="text-[9px] font-mono text-content-muted shrink-0">
+                      {formatted}
+                    </span>
+                  )}
                 </button>
               );
             })
@@ -445,245 +509,310 @@ export default function MentorPage() {
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-white/[0.06] pt-3 mt-2">
-        <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-2.5 text-[11px] text-slate-400">
-          <p className="font-semibold text-slate-300">Adaptive Intelligence</p>
-          <p className="text-[10px] text-slate-500 mt-0.5">Contextually guided by your goals & mistakes.</p>
+      {/* Adaptive Context Summary Footer */}
+      <div className="shrink-0 border-t border-border-subtle p-3 bg-surface">
+        <div className="rounded-lg border border-border-subtle bg-surface-elevated p-2.5">
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-content-primary">
+            <span className="h-1.5 w-1.5 rounded-full bg-status-success" />
+            <span>Adaptive Intelligence</span>
+          </div>
+          <p className="text-[10px] text-content-muted mt-1 leading-relaxed">
+            Mentoring tuned to your active roadmap, weak areas, and progress.
+          </p>
         </div>
       </div>
     </div>
   );
 
   return (
-    <div className="relative flex h-full w-full overflow-hidden bg-[#030712]">
-      {/* Ambient background */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute left-[15%] top-[-10rem] h-[30rem] w-[30rem] rounded-full bg-sky-500/[0.06] blur-[120px]" />
-        <div className="absolute right-[-8rem] top-[20%] h-[25rem] w-[25rem] rounded-full bg-violet-500/[0.05] blur-[120px]" />
-      </div>
-
+    <div className="relative flex h-[calc(100vh-theme(spacing.12))] md:h-screen w-full overflow-hidden bg-canvas text-content-primary">
       {/* Desktop Conversation Sidebar */}
-      <aside className="relative z-10 hidden w-72 shrink-0 border-r border-white/[0.06] bg-slate-950/40 p-4 lg:flex lg:flex-col min-h-0 h-full">
-        {threadListContent}
+      <aside className="relative z-20 hidden w-72 shrink-0 border-r border-border-subtle bg-surface lg:flex lg:flex-col min-h-0 h-full">
+        {sidebarContent}
       </aside>
 
-      {/* Mobile Threads Drawer */}
+      {/* Mobile Drawer */}
       {threadsDrawerOpen && (
-        <div className="fixed inset-0 z-40 flex lg:hidden">
+        <div className="fixed inset-0 z-50 flex lg:hidden">
           <div
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
             onClick={() => setThreadsDrawerOpen(false)}
+            aria-hidden="true"
           />
-          <div className="relative flex h-full w-72 max-w-[85vw] flex-col border-r border-white/[0.08] bg-slate-950 p-4 shadow-2xl">
-            {threadListContent}
+          <div className="relative flex h-full w-72 max-w-[85vw] flex-col border-r border-border-subtle bg-surface shadow-elevated z-10">
+            {sidebarContent}
           </div>
         </div>
       )}
 
-      {/* Main Chat Workspace */}
-      <div className="relative z-10 flex h-full flex-1 flex-col min-w-0 overflow-hidden">
-        {/* Sticky Workspace Header */}
-        <header className="shrink-0 flex items-center justify-between border-b border-white/[0.06] px-4 py-3 sm:px-6 bg-slate-950/60 backdrop-blur-md">
-          <div className="flex items-center gap-3">
+      {/* Main Workspace Area */}
+      <div className="relative z-10 flex h-full flex-1 flex-col min-w-0 overflow-hidden bg-canvas">
+        {/* Workspace Header */}
+        <header className="shrink-0 flex items-center justify-between border-b border-border-subtle px-4 py-2.5 sm:px-6 bg-surface/80 backdrop-blur-md">
+          <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
               onClick={() => setThreadsDrawerOpen(true)}
-              className="flex h-8 items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 text-xs font-medium text-slate-300 hover:bg-white/[0.06] lg:hidden"
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2.5 text-xs font-medium text-content-secondary hover:bg-surface-hover hover:text-content-primary lg:hidden"
+              aria-label="Open threads drawer"
             >
               <span>#</span>
               <span>Threads</span>
             </button>
 
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-white tracking-tight">AI Mentor Workspace</h2>
-                <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-0.5 text-[9px] font-semibold uppercase text-emerald-400">
-                  Adaptive
+                <h1 className="text-sm font-bold text-content-primary tracking-tight truncate">
+                  {activeTitle}
+                </h1>
+                <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-border-subtle bg-surface-elevated px-2 py-0.5 text-[9px] font-medium text-content-secondary">
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      sendingMessage
+                        ? 'bg-status-info animate-pulse'
+                        : isRegenerating
+                        ? 'bg-accent-violet animate-pulse'
+                        : 'bg-status-success'
+                    }`}
+                  />
+                  {sendingMessage
+                    ? 'Streaming response...'
+                    : isRegenerating
+                    ? 'Regenerating...'
+                    : loadingMessages
+                    ? 'Loading...'
+                    : 'Ready'}
+                </span>
+                <span className="hidden md:inline-flex items-center gap-1 rounded-full border border-border-subtle bg-surface-elevated px-2 py-0.5 text-[9px] font-medium text-content-muted">
+                  <span className="text-brand">✦</span> Adaptive Context Active
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 hidden sm:block">
-                Pair programming, debugging, and concept mastery
-              </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={startNewConversation}
-            disabled={creatingConversation}
-            className="rounded-xl border border-sky-400/20 bg-sky-400/10 px-3 py-1.5 text-xs font-semibold text-sky-300 hover:bg-sky-400/20 transition disabled:opacity-50"
-          >
-            {creatingConversation ? 'Creating...' : '+ New Thread'}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={startNewConversation}
+              disabled={creatingConversation}
+              isLoading={creatingConversation}
+              className="text-xs font-medium"
+            >
+              + New Chat
+            </Button>
+          </div>
         </header>
 
         {/* Scrollable Message Area */}
-        <section className="flex-1 min-h-0 overflow-y-auto px-4 py-6 sm:px-6">
+        <section className="flex-1 min-h-0 overflow-y-auto px-4 py-5 sm:px-6">
           <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
             {loadError && (
-              <p className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-300">
+              <ContentCallout variant="danger" title="Mentor Communication Notice">
                 {loadError}
-              </p>
+              </ContentCallout>
             )}
 
             {loadingMessages ? (
-              <p className="py-6 text-center text-sm text-slate-500">Loading messages...</p>
-            ) : (
-              <>
-                {/* Welcome view when empty */}
-                {messages.length === 0 && (
-                  <div className="py-8 text-center">
-                    <div className="relative mx-auto mb-5 h-16 w-16">
-                      <div className="absolute inset-0 animate-pulse rounded-full bg-sky-400/10 blur-xl" />
-                      <div className="absolute inset-1 rounded-2xl border border-sky-400/20 bg-gradient-to-br from-sky-400/15 via-cyan-400/10 to-violet-500/10 flex items-center justify-center">
-                        <span className="bg-gradient-to-r from-sky-300 via-cyan-300 to-violet-300 bg-clip-text text-base font-bold text-transparent">
-                          TS
-                        </span>
+              <div className="py-16 text-center">
+                <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent mb-3" />
+                <p className="text-xs text-content-muted">Loading conversation history...</p>
+              </div>
+            ) : messages.length === 0 ? (
+              /* Empty State Hero */
+              <div className="py-8 sm:py-12 text-center max-w-2xl mx-auto">
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-brand-subtle text-xl text-brand border border-brand-border shadow-subtle">
+                  ⚡
+                </div>
+
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand">
+                  TechSeeker Intelligence
+                </p>
+
+                <h2 className="mt-1.5 text-xl font-bold text-content-primary sm:text-2xl tracking-tight">
+                  AI Mentor & Technical Workspace
+                </h2>
+
+                <p className="mt-2 text-xs text-content-secondary leading-relaxed max-w-lg mx-auto">
+                  Your technical thinking partner. Ask questions about system architecture,
+                  debug code, practice concepts, or receive tailored roadmap guidance.
+                </p>
+
+                {/* Developer Suggestion Prompts */}
+                <div className="mt-8 grid w-full gap-2.5 sm:grid-cols-2 text-left">
+                  {SUGGESTIONS.map((item) => (
+                    <button
+                      key={item.title}
+                      type="button"
+                      onClick={() => handleSuggestionClick(item.prompt)}
+                      className="group rounded-xl border border-border-subtle bg-surface p-3 transition hover:border-brand-border hover:bg-surface-hover hover:shadow-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm select-none">{item.icon}</span>
+                        <h3 className="text-xs font-semibold text-content-primary group-hover:text-brand transition">
+                          {item.title}
+                        </h3>
                       </div>
-                    </div>
+                      <p className="mt-1 text-[11px] text-content-muted line-clamp-2 leading-normal">
+                        {item.prompt}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              /* Message Stream */
+              <div className="flex flex-col gap-6 pb-4">
+                {messages.map((chatMessage) => {
+                  const isAssistant = chatMessage.role === 'assistant';
+                  const isLatestAssistant =
+                    isAssistant && chatMessage.id === latestAssistantMessageId;
+                  const isCopied = copiedMessageId === chatMessage.id;
 
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-sky-400/80">
-                      TechSeeker Intelligence
-                    </p>
-
-                    <h3 className="mt-2 text-xl font-semibold text-white sm:text-2xl">
-                      What are you working on today?
-                    </h3>
-
-                    <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-slate-400">
-                      Ask questions, debug code, or work through tricky concepts with your adaptive mentor.
-                    </p>
-
-                    {/* Suggestions */}
-                    <div className="mx-auto mt-6 grid w-full max-w-xl gap-2 sm:grid-cols-2">
-                      {suggestions.map((suggestion) => (
-                        <button
-                          key={suggestion}
-                          type="button"
-                          onClick={() => handleSuggestion(suggestion)}
-                          className="group rounded-xl border border-white/[0.07] bg-white/[0.025] px-3.5 py-2.5 text-left text-xs text-slate-300 transition duration-150 hover:border-sky-400/30 hover:bg-sky-400/[0.06] hover:text-white"
-                        >
-                          <span className="mr-2 text-sky-400/60 group-hover:text-sky-300">✦</span>
-                          {suggestion}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Message stream */}
-                <div className="flex flex-col gap-5 pb-4">
-                  {messages.map((chatMessage) => {
-                    const isLatestAssistant =
-                      chatMessage.role === 'assistant' &&
-                      chatMessage.id ===
-                        [...messages]
-                          .reverse()
-                          .find((m) => m.role === 'assistant')?.id;
-
-                    return (
-                      <div
-                        key={chatMessage.id}
-                        className={`flex flex-col ${
-                          chatMessage.role === 'user' ? 'items-end' : 'items-start'
-                        }`}
-                      >
-                        <div
-                          className={`flex max-w-[88%] gap-3 sm:max-w-[78%] ${
-                            chatMessage.role === 'user' ? 'flex-row-reverse' : ''
-                          }`}
-                        >
-                          <div
-                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-xs font-bold ${
-                              chatMessage.role === 'assistant'
-                                ? 'bg-gradient-to-br from-sky-400 to-cyan-500 text-slate-950 shadow-md'
-                                : 'border border-white/[0.08] bg-white/[0.05] text-slate-300'
-                            }`}
-                          >
-                            {chatMessage.role === 'assistant' ? 'TS' : 'Y'}
+                  return (
+                    <div
+                      key={chatMessage.id}
+                      className={`flex flex-col ${
+                        isAssistant ? 'items-start' : 'items-end'
+                      }`}
+                    >
+                      {/* User Bubble */}
+                      {!isAssistant ? (
+                        <div className="flex flex-col items-end max-w-[88%] sm:max-w-[78%]">
+                          <div className="flex items-center gap-1.5 mb-1 text-[10px] font-semibold text-content-muted uppercase tracking-wider">
+                            <span>You</span>
+                          </div>
+                          <div className="rounded-2xl rounded-tr-sm border border-border bg-surface-elevated px-4 py-3 text-sm leading-relaxed text-content-primary shadow-subtle whitespace-pre-wrap">
+                            {chatMessage.content}
+                          </div>
+                        </div>
+                      ) : (
+                        /* Assistant Bubble */
+                        <div className="w-full max-w-full sm:max-w-[95%]">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-gradient-to-br from-sky-400 to-cyan-500 text-[10px] font-bold text-slate-950 shadow-subtle shrink-0">
+                              TS
+                            </div>
+                            <span className="text-xs font-bold text-content-primary tracking-tight">
+                              AI Mentor
+                            </span>
+                            {sendingMessage && !chatMessage.content && isLatestAssistant && (
+                              <span className="flex items-center gap-1 text-[10px] text-brand font-medium animate-pulse">
+                                <span className="h-1.5 w-1.5 rounded-full bg-brand" />
+                                Thinking...
+                              </span>
+                            )}
                           </div>
 
-                          <div
-                            className={`rounded-2xl px-4 py-3 text-sm leading-6 ${
-                              chatMessage.role === 'assistant'
-                                ? 'rounded-tl-md border border-white/[0.07] bg-white/[0.035] text-slate-300 shadow-sm'
-                                : 'rounded-tr-md bg-gradient-to-br from-sky-400 to-cyan-400 text-slate-950 font-medium shadow-md whitespace-pre-wrap'
-                            }`}
-                          >
+                          <div className="rounded-2xl rounded-tl-sm border border-border-subtle bg-surface p-4 sm:p-5 text-sm leading-relaxed shadow-subtle">
                             {chatMessage.content ? (
-                              chatMessage.role === 'assistant' ? (
-                                <MarkdownRenderer content={chatMessage.content} />
-                              ) : (
-                                chatMessage.content
-                              )
+                              <MarkdownRenderer content={chatMessage.content} />
                             ) : (
-                              (sendingMessage && chatMessage.role === 'assistant') ||
+                              (sendingMessage && isLatestAssistant) ||
                               (isRegenerating && isLatestAssistant) ? (
-                                <span className="inline-flex items-center gap-1.5 text-xs text-slate-400 italic">
-                                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-400" />
-                                  {isRegenerating ? 'Regenerating...' : 'Typing...'}
-                                </span>
+                                <div className="flex items-center gap-2 py-2 text-xs text-content-muted">
+                                  <span className="h-2 w-2 animate-ping rounded-full bg-brand" />
+                                  <span className="italic">
+                                    {isRegenerating
+                                      ? 'Regenerating technical explanation...'
+                                      : 'Analyzing and generating response...'}
+                                  </span>
+                                </div>
                               ) : null
                             )}
                           </div>
+
+                          {/* Assistant Action Bar */}
+                          {chatMessage.content && !sendingMessage && (
+                            <div className="mt-2 flex items-center gap-2">
+                              {/* Copy Response Button */}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleCopyResponse(chatMessage.id, chatMessage.content)
+                                }
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2.5 py-1 text-[11px] font-medium text-content-secondary transition hover:bg-surface-hover hover:text-content-primary"
+                                aria-label="Copy full response"
+                              >
+                                <span>{isCopied ? '✓' : '⎘'}</span>
+                                <span>{isCopied ? 'Copied' : 'Copy Response'}</span>
+                              </button>
+
+                              {/* Regenerate Button (Only under latest assistant response) */}
+                              {isLatestAssistant && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRegenerate(chatMessage.id)}
+                                  disabled={isRegenerating || sendingMessage}
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2.5 py-1 text-[11px] font-medium text-content-secondary transition hover:border-brand-border hover:bg-brand-subtle hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"
+                                  aria-label="Regenerate assistant response"
+                                >
+                                  <span
+                                    className={`text-xs ${
+                                      isRegenerating ? 'animate-spin' : ''
+                                    }`}
+                                  >
+                                    ↺
+                                  </span>
+                                  <span>
+                                    {isRegenerating
+                                      ? 'Regenerating...'
+                                      : 'Regenerate'}
+                                  </span>
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
-
-                        {/* Regenerate Button */}
-                        {isLatestAssistant && !sendingMessage && (
-                          <div className="mt-1.5 ml-11 flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleRegenerate(chatMessage.id)}
-                              disabled={isRegenerating || sendingMessage}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-[11px] font-medium text-slate-400 transition hover:border-sky-400/30 hover:bg-sky-400/10 hover:text-sky-300 disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                              <span className={`text-xs ${isRegenerating ? 'animate-spin' : ''}`}>↺</span>
-                              <span>{isRegenerating ? 'Regenerating...' : 'Regenerate'}</span>
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                  <div ref={messagesEndRef} />
-                </div>
-
-                {sendingMessage && (
-                  <p className="pb-2 text-xs text-slate-500 italic">Thinking...</p>
-                )}
-              </>
+                      )}
+                    </div>
+                  );
+                })}
+                <div ref={messagesEndRef} />
+              </div>
             )}
           </div>
         </section>
 
         {/* Pinned Bottom Composer */}
-        <div className="shrink-0 border-t border-white/[0.06] bg-slate-950/80 p-3 sm:p-4 backdrop-blur-md">
+        <div className="shrink-0 border-t border-border-subtle bg-surface/90 p-3 sm:p-4 backdrop-blur-md">
           <form onSubmit={handleSubmit} className="mx-auto max-w-4xl">
-            <div className="relative overflow-hidden rounded-2xl border border-white/[0.09] bg-slate-900/90 shadow-2xl transition focus-within:border-sky-400/40">
+            <div className="relative rounded-xl border border-border bg-surface shadow-elevated transition focus-within:border-brand focus-within:ring-1 focus-within:ring-brand">
               <div className="flex items-end gap-2 p-2.5">
                 <textarea
+                  ref={textareaRef}
                   value={message}
-                  onChange={(event) => setMessage(event.target.value)}
+                  onChange={(e) => setMessage(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Ask your AI mentor anything... (Shift+Enter for newline)"
+                  placeholder={
+                    sendingMessage || isRegenerating
+                      ? 'Mentor is streaming response...'
+                      : 'Ask your AI mentor anything... (Shift+Enter for newline)'
+                  }
                   rows={1}
-                  disabled={sendingMessage}
-                  className="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 disabled:opacity-60"
+                  disabled={sendingMessage || isRegenerating || loadingMessages}
+                  className="max-h-36 min-h-[42px] flex-1 resize-none bg-transparent px-2.5 py-2 text-sm text-content-primary outline-none placeholder:text-content-muted disabled:opacity-60"
                 />
 
-                <button
+                <Button
                   type="submit"
-                  disabled={!message.trim() || sendingMessage || loadingMessages}
-                  className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 to-cyan-400 text-xs font-bold text-slate-950 shadow-md shadow-sky-500/20 transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:scale-100"
-                  aria-label="Send message"
+                  size="sm"
+                  disabled={
+                    !message.trim() ||
+                    sendingMessage ||
+                    isRegenerating ||
+                    loadingMessages
+                  }
+                  isLoading={sendingMessage || isRegenerating}
+                  className="mb-0.5 shrink-0 px-3.5"
                 >
-                  {sendingMessage ? '...' : '→'}
-                </button>
+                  Send
+                </Button>
               </div>
 
-              <div className="flex items-center justify-between border-t border-white/[0.04] px-3.5 py-1.5 text-[10px] text-slate-500">
-                <span>AI can make mistakes. Verify critical code.</span>
-                <span className="hidden sm:inline">Enter to send | Shift + Enter for newline</span>
+              <div className="flex items-center justify-between border-t border-border-subtle px-3 py-1.5 text-[10px] text-content-muted">
+                <span>TechSeeker Adaptive Intelligence • Verify critical code</span>
+                <span className="hidden sm:inline">Enter ↵ to send • Shift + Enter for newline</span>
               </div>
             </div>
           </form>

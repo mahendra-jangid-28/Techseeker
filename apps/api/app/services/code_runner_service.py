@@ -4,8 +4,14 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import Optional
+from typing import List, Optional
 
+from app.schemas.challenge import (
+    ChallengeExecutionRequest,
+    ChallengeExecutionResponse,
+    TestCase,
+    TestCaseResult,
+)
 from app.schemas.playground import CodeExecutionRequest, CodeExecutionResponse
 
 
@@ -138,3 +144,104 @@ def execute_sandboxed_code(
 
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def execute_challenge_testcases(
+    request: ChallengeExecutionRequest,
+) -> ChallengeExecutionResponse:
+    """
+    Executes source code against multiple test cases and returns detailed results.
+    """
+    if not request.testcases:
+        # Single execution fallback
+        single_res = execute_sandboxed_code(
+            CodeExecutionRequest(
+                code=request.code,
+                language=request.language,
+                stdin=request.stdin or "",
+            )
+        )
+        passed = single_res.exit_code == 0
+        return ChallengeExecutionResponse(
+            passed=passed,
+            passed_tests=1 if passed else 0,
+            total_tests=1,
+            stdout=single_res.stdout,
+            stderr=single_res.stderr,
+            execution_time_ms=single_res.execution_time_ms,
+            memory_kb=1024,
+            test_results=[
+                TestCaseResult(
+                    id=1,
+                    input=request.stdin or "",
+                    expected_output="",
+                    actual_output=single_res.stdout.strip(),
+                    passed=passed,
+                    execution_time_ms=single_res.execution_time_ms,
+                    error=single_res.stderr if not passed else None,
+                )
+            ],
+            feedback="Execution complete." if passed else "Execution encountered errors.",
+        )
+
+    results: List[TestCaseResult] = []
+    total_time = 0
+    passed_count = 0
+    combined_stdout = []
+    combined_stderr = []
+
+    for tc in request.testcases:
+        tc_res = execute_sandboxed_code(
+            CodeExecutionRequest(
+                code=request.code,
+                language=request.language,
+                stdin=tc.input,
+            )
+        )
+
+        total_time += tc_res.execution_time_ms
+        actual = tc_res.stdout.strip()
+        expected = tc.expected_output.strip()
+
+        is_passed = (tc_res.exit_code == 0) and (actual == expected)
+        if is_passed:
+            passed_count += 1
+
+        if tc_res.stdout:
+            combined_stdout.append(f"[Test {tc.id}] {tc_res.stdout.strip()}")
+        if tc_res.stderr:
+            combined_stderr.append(f"[Test {tc.id}] {tc_res.stderr.strip()}")
+
+        results.append(
+            TestCaseResult(
+                id=tc.id,
+                input=tc.input if not tc.is_hidden else "[Hidden Testcase Input]",
+                expected_output=expected if not tc.is_hidden else "[Hidden Testcase Output]",
+                actual_output=actual,
+                passed=is_passed,
+                execution_time_ms=tc_res.execution_time_ms,
+                error=tc_res.stderr if not is_passed else None,
+                is_hidden=tc.is_hidden,
+            )
+        )
+
+    total_tests = len(request.testcases)
+    all_passed = passed_count == total_tests
+
+    feedback = (
+        f"All {total_tests} test cases passed! ✨"
+        if all_passed
+        else f"Passed {passed_count} of {total_tests} test cases."
+    )
+
+    return ChallengeExecutionResponse(
+        passed=all_passed,
+        passed_tests=passed_count,
+        total_tests=total_tests,
+        stdout="\n".join(combined_stdout),
+        stderr="\n".join(combined_stderr),
+        execution_time_ms=total_time,
+        memory_kb=1024,
+        test_results=results,
+        feedback=feedback,
+    )

@@ -50,3 +50,9 @@ class User(Base):
         cascade="all, delete-orphan",
         order_by="StudyRecommendation.priority",
     )
+    certificates = relationship(
+        "Certificate",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        order_by="desc(Certificate.issue_date)",
+    )

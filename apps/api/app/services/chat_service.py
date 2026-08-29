@@ -1,3 +1,4 @@
+import logging
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -13,6 +14,8 @@ from app.services.context_service import build_context
 from app.services.system_prompt_service import get_system_prompt
 from app.services.memory_service import build_personalized_mentor_context
 
+logger = logging.getLogger("techseeker.chat")
+
 
 def generate_ai_response(
     messages: list[dict[str, str]],
@@ -22,7 +25,7 @@ def generate_ai_response(
         provider = GeminiProvider()
         return provider.generate(messages, system_instruction=system_instruction)
     except Exception as e:
-        print(f"Gemini Error: {e}")
+        logger.error(f"Gemini Error: {e}")
         return "Sorry, I couldn't generate a response at the moment."
 
 
@@ -111,20 +114,16 @@ def send_message(
     messages = repository.get_messages(conversation.id)
 
     if len(messages) == 1 and conversation.title == "New Chat":
-        print("===== TITLE DEBUG =====")
-        print(f"Messages Count: {len(messages)}")
-        print(f"Current Title: {conversation.title}")
+        logger.debug(f"Generating conversation title for conversation_id={conversation.id}")
 
         title = generate_title(data.content)
-
-        print(f"Generated Title: {title}")
 
         repository.update_conversation_title(
             conversation=conversation,
             title=title,
         )
 
-        print("Title Updated Successfully")
+        logger.debug(f"Conversation title updated for conversation_id={conversation.id}")
 
     gemini_messages = build_context(messages)
 
@@ -229,13 +228,11 @@ async def stream_chat(
     4. Streams response chunks immediately.
     5. Persists full assistant message upon completion.
     """
-    close_db = False
-    if db is None:
-        db = SessionLocal()
-        close_db = True
+    session = db if db is not None else SessionLocal()
+    should_close = db is None
 
     try:
-        repository = ChatRepository(db)
+        repository = ChatRepository(session)
 
         conversation = repository.get_conversation(
             conversation_id=conversation_id,
@@ -265,7 +262,7 @@ async def stream_chat(
 
         gemini_messages = build_context(messages)
 
-        adaptive_context = build_personalized_mentor_context(db, user_id)
+        adaptive_context = build_personalized_mentor_context(session, user_id)
         system_instruction = get_system_prompt(adaptive_context)
 
         provider = GeminiProvider()
@@ -282,6 +279,10 @@ async def stream_chat(
             role="assistant",
             content=full_response,
         )
+    except Exception:
+        if should_close:
+            session.rollback()
+        raise
     finally:
-        if close_db:
-            db.close()
+        if should_close:
+            session.close()

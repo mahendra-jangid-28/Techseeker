@@ -1,6 +1,6 @@
 from datetime import datetime
-
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from typing import Optional
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
@@ -25,12 +25,74 @@ class Project(Base):
     language: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
+        default="python",
+    )
+
+    description: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        default="",
+    )
+
+    category: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        default="Full Stack",
+    )
+
+    difficulty: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+        default="Intermediate",
+    )
+
+    tech_stack: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        default="Python, FastAPI, SQLite",
+    )
+
+    github_url: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    live_demo_url: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    thumbnail: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
     )
 
     code: Mapped[str] = mapped_column(
         Text,
         nullable=False,
         default="",
+    )
+
+    files: Mapped[Optional[dict]] = mapped_column(
+        JSON,
+        nullable=True,
+        default=dict,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="draft",  # 'draft', 'submitted', 'completed'
+    )
+
+    score: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    review_json: Mapped[Optional[dict]] = mapped_column(
+        JSON,
+        nullable=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(

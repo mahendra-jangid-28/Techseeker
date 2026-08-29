@@ -96,7 +96,6 @@ def send_message(
 async def stream_chat(
     conversation_id: int,
     data: MessageCreate,
-    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     async def event_generator():
@@ -104,7 +103,6 @@ async def stream_chat(
             conversation_id=conversation_id,
             user_id=current_user.id,
             content=data.content,
-            db=db,
         ):
             yield f"data: {chunk}\n\n"
         yield "event: done\ndata: [DONE]\n\n"

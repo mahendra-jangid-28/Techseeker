@@ -13,13 +13,17 @@ from app.schemas.project import (
 from app.services import project_service
 
 router = APIRouter(
-    prefix="/api/v1/projects",
     tags=["Projects"],
 )
 
 
 @router.post(
-    "",
+    "/api/v1/projects",
+    response_model=ProjectDetailResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+@router.post(
+    "/projects",
     response_model=ProjectDetailResponse,
     status_code=status.HTTP_201_CREATED,
 )
@@ -36,7 +40,11 @@ def create_project(
 
 
 @router.get(
-    "",
+    "/api/v1/projects",
+    response_model=list[ProjectListItemResponse],
+)
+@router.get(
+    "/projects",
     response_model=list[ProjectListItemResponse],
 )
 def list_my_projects(
@@ -50,7 +58,11 @@ def list_my_projects(
 
 
 @router.get(
-    "/{project_id}",
+    "/api/v1/projects/{project_id}",
+    response_model=ProjectDetailResponse,
+)
+@router.get(
+    "/projects/{project_id}",
     response_model=ProjectDetailResponse,
 )
 def get_project(
@@ -66,7 +78,11 @@ def get_project(
 
 
 @router.put(
-    "/{project_id}",
+    "/api/v1/projects/{project_id}",
+    response_model=ProjectDetailResponse,
+)
+@router.put(
+    "/projects/{project_id}",
     response_model=ProjectDetailResponse,
 )
 def update_project(
@@ -84,7 +100,10 @@ def update_project(
 
 
 @router.delete(
-    "/{project_id}",
+    "/api/v1/projects/{project_id}",
+)
+@router.delete(
+    "/projects/{project_id}",
 )
 def delete_project(
     project_id: int,
@@ -92,6 +111,26 @@ def delete_project(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     return project_service.delete_project(
+        db=db,
+        user=current_user,
+        project_id=project_id,
+    )
+
+
+@router.post(
+    "/api/v1/projects/{project_id}/evaluate",
+    response_model=ProjectDetailResponse,
+)
+@router.post(
+    "/projects/{project_id}/evaluate",
+    response_model=ProjectDetailResponse,
+)
+def evaluate_project(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ProjectDetailResponse:
+    return project_service.evaluate_project_submission(
         db=db,
         user=current_user,
         project_id=project_id,
