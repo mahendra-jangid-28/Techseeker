@@ -31,14 +31,25 @@ def execute_sandboxed_code(
     Falls back gracefully to a restricted local subprocess if the Docker daemon is offline.
     """
     start_time = time.perf_counter()
-    stdin_input = request.stdin or ""
+    raw_stdin = request.stdin or ""
+    # Normalize CRLF/CR to LF, ensure clean line termination
+    normalized_stdin = raw_stdin.replace("\r\n", "\n").replace("\r", "\n")
+    if normalized_stdin and not normalized_stdin.endswith("\n"):
+        normalized_stdin += "\n"
+    stdin_bytes = normalized_stdin.encode("utf-8")
+
     timeout_seconds = 2.0
 
     temp_dir = tempfile.mkdtemp(prefix="ts_sandbox_")
     try:
         main_file = os.path.join(temp_dir, "main.py")
         with open(main_file, "w", encoding="utf-8") as f:
-            f.write(request.code)
+            f.write(
+                "import sys\n"
+                "if hasattr(sys, 'set_int_max_str_digits'):\n"
+                "    sys.set_int_max_str_digits(100000)\n\n"
+                + request.code
+            )
 
         stdout = ""
         stderr = ""
@@ -63,6 +74,8 @@ def execute_sandboxed_code(
                 "--read-only",
                 "--tmpfs",
                 "/tmp:rw,size=16m",
+                "-e",
+                "PYTHONINTMAXSTRDIGITS=100000",
                 "-v",
                 f"{normalized_temp_dir}:/app:ro",
                 "-w",
@@ -70,30 +83,35 @@ def execute_sandboxed_code(
                 "-i",
                 "python:3.12-alpine",
                 "python",
+                "-X",
+                "int_max_str_digits=100000",
+                "-u",
                 "main.py",
             ]
 
             try:
                 proc = subprocess.run(
                     docker_cmd,
-                    input=stdin_input,
+                    input=stdin_bytes,
                     capture_output=True,
-                    text=True,
                     timeout=timeout_seconds,
                 )
                 
+                stderr_decoded = proc.stderr.decode("utf-8", errors="replace")
+                stdout_decoded = proc.stdout.decode("utf-8", errors="replace")
+
                 # Verify if Docker daemon failed to connect
                 docker_daemon_error = (
-                    "failed to connect to the docker API" in proc.stderr
-                    or "Cannot connect to the Docker daemon" in proc.stderr
-                    or "dockerDesktopLinuxEngine" in proc.stderr
-                    or "Is the docker daemon running" in proc.stderr
-                    or "error during connect" in proc.stderr
+                    "failed to connect to the docker API" in stderr_decoded
+                    or "Cannot connect to the Docker daemon" in stderr_decoded
+                    or "dockerDesktopLinuxEngine" in stderr_decoded
+                    or "Is the docker daemon running" in stderr_decoded
+                    or "error during connect" in stderr_decoded
                 )
 
                 if not docker_daemon_error:
-                    stdout = proc.stdout
-                    stderr = proc.stderr
+                    stdout = stdout_decoded
+                    stderr = stderr_decoded
                     exit_code = proc.returncode
                     docker_success = True
                 else:
@@ -109,16 +127,18 @@ def execute_sandboxed_code(
         # Fallback to local subprocess execution if Docker wasn't successful
         if not docker_success:
             try:
+                env = os.environ.copy()
+                env["PYTHONINTMAXSTRDIGITS"] = "100000"
                 proc = subprocess.run(
-                    [sys.executable, main_file],
-                    input=stdin_input,
+                    [sys.executable, "-X", "int_max_str_digits=100000", "-u", main_file],
+                    input=stdin_bytes,
                     capture_output=True,
-                    text=True,
                     timeout=timeout_seconds,
                     cwd=temp_dir,
+                    env=env,
                 )
-                stdout = proc.stdout
-                stderr = proc.stderr
+                stdout = proc.stdout.decode("utf-8", errors="replace")
+                stderr = proc.stderr.decode("utf-8", errors="replace")
                 exit_code = proc.returncode
             except subprocess.TimeoutExpired:
                 stdout = ""
@@ -132,7 +152,7 @@ def execute_sandboxed_code(
         execution_time_ms = int((time.perf_counter() - start_time) * 1000)
 
         # Append helpful contextual tip if EOFError was triggered due to empty STDIN
-        if "EOFError: EOF when reading a line" in stderr and not stdin_input.strip():
+        if "EOFError: EOF when reading a line" in stderr and not raw_stdin.strip():
             stderr += "\n\n[TechSeeker Sandbox Tip] Your Python code requested input via input(), but STDIN was empty. In sandboxed batch execution, please enter input lines in the STDIN panel before clicking Run."
 
         return CodeExecutionResponse(

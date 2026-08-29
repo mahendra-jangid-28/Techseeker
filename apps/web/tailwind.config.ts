@@ -9,6 +9,27 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['var(--font-inter)', 'Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        heading: ['var(--font-space-grotesk)', 'Space Grotesk', 'sans-serif'],
+        display: ['var(--font-space-grotesk)', 'Space Grotesk', 'sans-serif'],
+        mono: ['JetBrains Mono', 'Fira Code', 'ui-monospace', 'monospace'],
+      },
+      fontSize: {
+        'display-2xl': ['4.5rem', { lineHeight: '1.05', letterSpacing: '-0.03em' }],
+        'display-xl':  ['3.75rem', { lineHeight: '1.1', letterSpacing: '-0.025em' }],
+        'display-lg':  ['3rem',    { lineHeight: '1.15', letterSpacing: '-0.02em' }],
+        'display-md':  ['2.25rem', { lineHeight: '1.2', letterSpacing: '-0.02em' }],
+        'heading-xl':  ['2rem',    { lineHeight: '1.25', letterSpacing: '-0.02em' }],
+        'heading-lg':  ['1.5rem',  { lineHeight: '1.3', letterSpacing: '-0.015em' }],
+        'heading-md':  ['1.25rem', { lineHeight: '1.35', letterSpacing: '-0.01em' }],
+        'heading-sm':  ['1.125rem', { lineHeight: '1.4', letterSpacing: '-0.005em' }],
+        'body-lg':     ['1.125rem', { lineHeight: '1.6', letterSpacing: '-0.005em' }],
+        'body-md':     ['1rem',    { lineHeight: '1.55', letterSpacing: '0em' }],
+        'body-sm':     ['0.875rem', { lineHeight: '1.5', letterSpacing: '0em' }],
+        'caption':     ['0.75rem', { lineHeight: '1.45', letterSpacing: '0.01em' }],
+        'caption-sm':  ['0.6875rem', { lineHeight: '1.4', letterSpacing: '0.02em' }],
+      },
       colors: {
         canvas: 'var(--bg-canvas)',
         surface: {

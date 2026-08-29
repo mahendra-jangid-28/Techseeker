@@ -102,6 +102,9 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     )
 
 
+from fastapi.encoders import jsonable_encoder
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     request_id = getattr(
@@ -119,7 +122,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
     return JSONResponse(
         status_code=422,
-        content={"detail": exc.errors()},
+        content={"detail": jsonable_encoder(exc.errors())},
         headers=headers,
     )
 

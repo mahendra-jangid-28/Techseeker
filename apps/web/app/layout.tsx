@@ -1,7 +1,21 @@
 import type { Metadata } from 'next';
+import { Space_Grotesk, Inter } from 'next/font/google';
 import './globals.css';
 import AppShellWrapper from '../components/AppShellWrapper';
 import { ThemeProvider } from '../components/ThemeProvider';
+import { GoogleAuthProvider } from '../components/GoogleAuthProvider';
+
+const spaceGrotesk = Space_Grotesk({
+  subsets: ['latin'],
+  variable: '--font-space-grotesk',
+  display: 'swap',
+});
+
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-inter',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'TechSeeker — Learning Intelligence System',
@@ -14,7 +28,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`${spaceGrotesk.variable} ${inter.variable} font-sans`}
+      suppressHydrationWarning
+    >
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -34,9 +52,11 @@ export default function RootLayout({
         />
       </head>
       <body className="bg-canvas text-content-primary antialiased">
-        <ThemeProvider>
-          <AppShellWrapper>{children}</AppShellWrapper>
-        </ThemeProvider>
+        <GoogleAuthProvider>
+          <ThemeProvider>
+            <AppShellWrapper>{children}</AppShellWrapper>
+          </ThemeProvider>
+        </GoogleAuthProvider>
       </body>
     </html>
   );

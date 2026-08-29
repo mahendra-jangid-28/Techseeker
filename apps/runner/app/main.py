@@ -1,9 +1,14 @@
+import sys
 from typing import Optional
 
 from fastapi import FastAPI
 from pydantic import BaseModel
 
 from app.executor import CodeExecutor
+
+# Configure sandbox integer string conversion cap (100,000 digits)
+if hasattr(sys, "set_int_max_str_digits"):
+    sys.set_int_max_str_digits(100_000)
 
 app = FastAPI(
     title="TechSeeker Code Runner",

@@ -242,12 +242,13 @@ export default function PlaygroundPage() {
     setActiveTab('console');
 
     const inputPayload = overrideStdin !== undefined ? overrideStdin : stdin;
+    const cleanStdin = inputPayload.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
     try {
       const res = await runPlaygroundCode({
         language,
         code,
-        stdin: inputPayload.length > 0 ? inputPayload : undefined,
+        stdin: cleanStdin.length > 0 ? cleanStdin : undefined,
       });
       setExecutionResult(res);
     } catch (err) {
@@ -819,17 +820,17 @@ export default function PlaygroundPage() {
                       <div className="mt-5 text-left rounded-xl border border-amber-500/30 bg-surface p-3.5 shadow-subtle">
                         <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-500 mb-1.5">
                           <span>⌨</span>
-                          <span>Interactive Input Required</span>
+                          <span>Interactive STDIN Input</span>
                         </div>
-                        <p className="text-[11px] text-content-muted mb-2">
-                          Your code uses <code className="font-mono text-amber-400">input()</code>. Type the input lines below before executing:
+                        <p className="text-[11px] text-content-muted mb-2 leading-relaxed">
+                          Your code calls <code className="font-mono text-amber-400">input()</code>. Enter each prompt value on a new line (e.g. Line 1: name, Line 2: number):
                         </p>
                         <textarea
                           value={stdin}
                           onChange={(e) => setStdin(e.target.value)}
-                          placeholder="Type input here..."
-                          rows={2}
-                          className="w-full resize-none rounded-lg border border-border-subtle bg-surface-elevated p-2 font-mono text-xs text-content-primary outline-none focus:border-brand"
+                          placeholder={"Line 1: your name\nLine 2: your number"}
+                          rows={3}
+                          className="w-full resize-y rounded-lg border border-border-subtle bg-surface-elevated p-2 font-mono text-xs text-content-primary outline-none focus:border-brand"
                         />
                         <Button
                           variant="primary"
@@ -888,23 +889,23 @@ export default function PlaygroundPage() {
                       </div>
                     )}
 
-                    {/* Inline STDIN Prompt if code threw EOFError due to empty input */}
+                    {/* Inline STDIN Prompt if code threw EOFError due to empty or missing input line */}
                     {isEofError && (
                       <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5">
                         <div className="flex items-center gap-1.5 text-xs font-bold text-amber-500 mb-1">
                           <span>⌨</span>
-                          <span>Provide Input for input()</span>
+                          <span>Provide Input for Next input() Prompt</span>
                         </div>
                         <p className="text-[11px] text-content-secondary mb-2 leading-relaxed">
-                          Your code called <code className="font-mono text-amber-400">input()</code>, but STDIN was empty. Enter the input value below and click <strong>Run with Input</strong>:
+                          Your code requested additional input via <code className="font-mono text-amber-400">input()</code>. Provide input values (one per line):
                         </p>
                         <div className="space-y-2">
                           <textarea
                             value={stdin}
                             onChange={(e) => setStdin(e.target.value)}
-                            placeholder="Enter input string or numbers..."
-                            rows={2}
-                            className="w-full resize-none rounded-lg border border-amber-500/40 bg-surface p-2 font-mono text-xs text-content-primary outline-none focus:border-brand"
+                            placeholder={"Line 1: first input\nLine 2: second input"}
+                            rows={3}
+                            className="w-full resize-y rounded-lg border border-amber-500/40 bg-surface p-2 font-mono text-xs text-content-primary outline-none focus:border-brand"
                           />
                           <div className="flex justify-end">
                             <Button

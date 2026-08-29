@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.db.dependencies import get_db
@@ -8,12 +9,12 @@ from app.repositories.user_repository import (
     create_user,
     get_user_by_email,
 )
-from app.schemas.user import UserCreate, UserResponse
+from app.schemas.token import GoogleOAuthRequest, Token
+from app.schemas.user import UserCreate, UserLogin, UserResponse
 from app.security.password import hash_password
-from app.schemas.user import UserLogin
-from app.schemas.token import Token
 from app.security.token import create_access_token
-from fastapi.security import OAuth2PasswordRequestForm
+from app.services.auth_service import authenticate_or_register_google_user
+
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
@@ -34,9 +35,12 @@ def register(
         email=user.email,
         full_name=user.full_name,
         hashed_password=hash_password(user.password),
+        auth_provider="local",
     )
 
     return create_user(db, new_user)
+
+
 @router.post("/login", response_model=Token)
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -61,7 +65,25 @@ def login(
         }
     )
 
+    user_response = UserResponse(
+        id=db_user.id,
+        email=db_user.email,
+        full_name=db_user.full_name,
+        auth_provider=db_user.auth_provider,
+        profile_picture_url=db_user.profile_picture_url,
+    )
+
     return {
         "access_token": access_token,
         "token_type": "bearer",
+        "token": access_token,
+        "user": user_response,
     }
+
+
+@router.post("/oauth/google", response_model=Token)
+def google_oauth(
+    request_data: GoogleOAuthRequest,
+    db: Session = Depends(get_db),
+):
+    return authenticate_or_register_google_user(db, request_data.id_token)

@@ -137,11 +137,16 @@ body {
   min-height: 100vh;
   background-color: var(--bg-canvas);
   color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto,
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
   transition: background-color 0.25s ease, color 0.25s ease;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6, .font-heading, .font-display {
+  font-family: var(--font-space-grotesk), 'Space Grotesk', system-ui, sans-serif;
+  letter-spacing: -0.025em;
 }
 
 /* ── Subtle background mesh for dark mode only (very low opacity) ── */

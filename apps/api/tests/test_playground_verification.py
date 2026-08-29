@@ -58,7 +58,74 @@ def test_playground_runner():
     print("Test 4 Result:", data4)
     assert data4["exit_code"] == 124 or "timed out" in data4["stderr"].lower()
 
-    print("\n[SUCCESS] SPRINT 10A PLAYGROUND CODE RUNNER VERIFIED 100%!")
+    # 5. Test user exact scenario: name input + int(number input) with CRLF & LF
+    user_code = """
+name = input("Enter your name: ")
+print(f"Hello, {name}!")
+num = int(input("Enter a number: "))
+print(f"Number is: {num}")
+"""
+    for line_ending in ["\r\n", "\n"]:
+        payload5 = {
+            "language": "python",
+            "code": user_code,
+            "stdin": f"hello{line_ending}42{line_ending}",
+        }
+        res5 = client.post("/playground/run", json=payload5)
+        assert res5.status_code == 200
+        data5 = res5.json()
+        print(f"User Scenario ({repr(line_ending)}) Result:", data5)
+        assert data5["exit_code"] == 0, f"Failed with stderr: {data5['stderr']}"
+        assert "Hello, hello!" in data5["stdout"]
+        assert "Number is: 42" in data5["stdout"]
+        assert data5["stderr"] == ""
+
+    # 6. Test multiple sequential input() calls with 3+ distinct values of different lengths
+    multi_input_code = """
+v1 = input("Prompt 1: ")
+v2 = input("Prompt 2: ")
+v3 = input("Prompt 3: ")
+print(f"R1:[{v1}]|R2:[{v2}]|R3:[{v3}]")
+"""
+    # Test with varying lengths: "hello" (5 chars), "42" (2 chars), "a longer string here" (20 chars)
+    payload6 = {
+        "language": "python",
+        "code": multi_input_code,
+        "stdin": "hello\r\n42\r\na longer string here\r\n",
+    }
+    res6 = client.post("/playground/run", json=payload6)
+    assert res6.status_code == 200
+    data6 = res6.json()
+    print("Multiple Input Test Result:", data6)
+    assert data6["exit_code"] == 0
+    assert "R1:[hello]|R2:[42]|R3:[a longer string here]" in data6["stdout"]
+    assert data6["stderr"] == ""
+
+    # 7. Test large integer-to-string conversion cap (factorial > 4300 digits)
+    large_int_code = """
+import math
+fact = math.factorial(2000)
+fact_str = str(fact)
+print(f"Digits: {len(fact_str)}")
+print(f"Starts with: {fact_str[:10]}")
+print(f"Ends with: {fact_str[-10:]}")
+"""
+    payload7 = {
+        "language": "python",
+        "code": large_int_code,
+        "stdin": "",
+    }
+    res7 = client.post("/playground/run", json=payload7)
+    assert res7.status_code == 200
+    data7 = res7.json()
+    print("Large Integer Test Result:", data7)
+    assert data7["exit_code"] == 0, f"Large int execution failed: {data7['stderr']}"
+    assert "Digits: 5736" in data7["stdout"]
+    assert data7["stderr"] == ""
+    assert data7["execution_time_ms"] < 2000  # Well within 2s timeout
+
+    print("\n[SUCCESS] PLAYGROUND CODE RUNNER, STDIN & LARGE INT STR DIGITS VERIFIED 100%!")
 
 if __name__ == "__main__":
     test_playground_runner()
+

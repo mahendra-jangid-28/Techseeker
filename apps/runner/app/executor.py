@@ -139,23 +139,33 @@ class CodeExecutor:
         process = None
 
         try:
-            stdin_bytes = stdin.encode("utf-8") if stdin else b""
+            raw_stdin = stdin or ""
+            normalized_stdin = raw_stdin.replace("\r\n", "\n").replace("\r", "\n")
+            if normalized_stdin and not normalized_stdin.endswith("\n"):
+                normalized_stdin += "\n"
+            stdin_bytes = normalized_stdin.encode("utf-8") if normalized_stdin else b""
             has_prlimit = shutil.which("prlimit") is not None
 
             # Prepare language-specific source files and execution command
             if normalized_lang == "python":
                 file_path = os.path.join(temp_dir, "solution.py")
                 with open(file_path, "w", encoding="utf-8") as f:
-                    f.write(code)
+                    f.write(
+                        "import sys\n"
+                        "if hasattr(sys, 'set_int_max_str_digits'):\n"
+                        "    sys.set_int_max_str_digits(100000)\n\n"
+                        + code
+                    )
 
                 if has_prlimit:
-                    cmd = ["prlimit", f"--as={MEMORY_LIMIT_BYTES}", sys.executable, "-u", "solution.py"]
+                    cmd = ["prlimit", f"--as={MEMORY_LIMIT_BYTES}", sys.executable, "-X", "int_max_str_digits=100000", "-u", "solution.py"]
                 else:
-                    cmd = [sys.executable, "-u", "solution.py"]
+                    cmd = [sys.executable, "-X", "int_max_str_digits=100000", "-u", "solution.py"]
 
                 exec_env = {
                     "PYTHONUNBUFFERED": "1",
                     "PYTHONDONTWRITEBYTECODE": "1",
+                    "PYTHONINTMAXSTRDIGITS": "100000",
                     "PATH": os.environ.get("PATH", ""),
                 }
 

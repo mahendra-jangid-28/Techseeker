@@ -16,6 +16,8 @@ class UserResponse(BaseModel):
     id: int
     email: EmailStr
     full_name: str
+    auth_provider: str | None = "local"
+    profile_picture_url: str | None = None
 
     model_config = {
         "from_attributes": True

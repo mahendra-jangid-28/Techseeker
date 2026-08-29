@@ -5,18 +5,24 @@ const TOKEN_KEY = 'techseeker_access_token';
 export type AuthTokenResponse = {
   access_token: string;
   token_type: string;
+  token?: string;
+  user?: UserResponse;
 };
 
 export type RegisterResponse = {
   id: number;
   email: string;
   full_name: string;
+  auth_provider?: string;
+  profile_picture_url?: string | null;
 };
 
 export type UserResponse = {
   id: number;
   email: string;
   full_name: string;
+  auth_provider?: string;
+  profile_picture_url?: string | null;
 };
 
 export function saveToken(token: string): void {
@@ -42,6 +48,15 @@ export function login(email: string, password: string): Promise<AuthTokenRespons
     form: {
       username: email,
       password,
+    },
+  });
+}
+
+export function loginWithGoogle(idToken: string): Promise<AuthTokenResponse> {
+  return apiRequest<AuthTokenResponse>('/auth/oauth/google', {
+    method: 'POST',
+    body: {
+      idToken,
     },
   });
 }
