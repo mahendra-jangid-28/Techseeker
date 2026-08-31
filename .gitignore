@@ -1,16 +1,17 @@
 # Dependencies
 node_modules/
-node_modules
 .pnpm-store
 
-# Next.js
+# Next.js & Build Outputs
 .next/
-.next
-out
+out/
 dist/
-dist
-coverage/
-coverage
+build/
+*.tsbuildinfo
+
+# Turborepo Cache
+.turbo/
+.turbo
 
 # Environment & Secrets
 .env
@@ -18,28 +19,51 @@ coverage
 .env.local
 .env.*.local
 *.env
+!.env.example
+!.env.*.example
 
 # Python
 __pycache__/
 *.pyc
 *.py[cod]
 *$py.class
-.pytest_cache/
-.venv/
-env/
-venv/
+*.egg-info/
+.venv*/
+venv*/
+env*/
 ENV/
-
-# Turbo
-.turbo/
-.turbo
 
 # Coverage & Tests
 .coverage
+.coverage.*
+coverage/
+htmlcov/
+coverage.xml
+.pytest_cache/
 
-# Logs & Temporary
-*.log
+# IDE & Editor Settings
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Database & Local Dumps
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.sql
+
+# Uploads, Storage & Scratch
+uploads/
+storage/
+query
 *.tmp
+
+# Operating System Files
 .DS_Store
 Thumbs.db
-
+Desktop.ini
+ehthumbs.db
