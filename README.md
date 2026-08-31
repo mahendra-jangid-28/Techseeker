@@ -82,3 +82,8 @@ pnpm --filter @techseeker/web dev
 
 - Web Application: [http://localhost:3000](http://localhost:3000)
 - Backend API Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
