@@ -1,4 +1,7 @@
 services:
+  # ==========================================
+  # 1. TechSeeker FastAPI Backend (Public API)
+  # ==========================================
   - type: web
     name: techseeker-api
     runtime: docker
@@ -7,14 +10,21 @@ services:
     plan: free
     healthCheckPath: /health
     autoDeploy: true
+    preDeployCommand: alembic upgrade head
     envVars:
       - key: APP_NAME
         value: TechSeeker API
       - key: APP_VERSION
         value: 1.0.0
+      - key: ENVIRONMENT
+        value: production
       - key: DEBUG
         value: "false"
       - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: REDIS_URL
         sync: false
       - key: SECRET_KEY
         generateValue: true
@@ -24,9 +34,23 @@ services:
         value: "60"
       - key: GEMINI_API_KEYS
         sync: false
+      - key: RUNNER_SERVICE_URL
+        value: http://techseeker-runner:8001/execute
       - key: CORS_ORIGINS
-        value: "*"
+        value: https://techseeker.vercel.app,http://localhost:3000
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
+
+  # ==========================================
+  # 2. TechSeeker Isolated Sandbox Code Runner (Private Service)
+  # ==========================================
+  - type: pserv
+    name: techseeker-runner
+    runtime: docker
+    dockerfilePath: ./apps/runner/Dockerfile
+    dockerContext: ./apps/runner
+    plan: free
+    autoDeploy: true
+

@@ -1,11 +1,12 @@
 import httpx
 from fastapi import HTTPException
 
+from app.core.config import settings
 from app.schemas.playground import CodeExecutionRequest, CodeExecutionResponse
 
-RUNNER_SERVICE_URL = "http://127.0.0.1:8001/execute"
 REQUEST_TIMEOUT_SECONDS = 15.0
 SUPPORTED_LANGUAGES = {"python", "javascript", "cpp"}
+
 
 
 async def execute_code_via_runner(
@@ -21,9 +22,10 @@ async def execute_code_via_runner(
     try:
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
             response = await client.post(
-                RUNNER_SERVICE_URL,
+                settings.RUNNER_SERVICE_URL,
                 json=request_data.model_dump(),
             )
+
 
         if response.status_code != 200:
             raise HTTPException(

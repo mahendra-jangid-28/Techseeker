@@ -1,0 +1,39 @@
+name: Production Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  # ==============================================================================
+  # Deploy Coordination
+  # Note: Frontend (apps/web) deploys automatically via Vercel's native Git integration.
+  # Backend API & Code Runner deploy via Render blueprints / deploy hooks.
+  # ==============================================================================
+  deploy-backend:
+    name: Trigger Backend Services Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Deployment Started
+        run: |
+          echo "Triggering production deployment for TechSeeker on branch: ${{ github.ref }}"
+          echo "Vercel will build and deploy apps/web via Git integration."
+
+      - name: Trigger Render API Deploy Hook
+        if: env.RENDER_API_DEPLOY_HOOK != ''
+        env:
+          RENDER_API_DEPLOY_HOOK: ${{ secrets.RENDER_API_DEPLOY_HOOK }}
+        run: |
+          curl -fsS -X POST "${{ secrets.RENDER_API_DEPLOY_HOOK }}" || echo "Warning: Render API deploy hook trigger failed or not configured."
+
+      - name: Trigger Render Runner Deploy Hook
+        if: env.RENDER_RUNNER_DEPLOY_HOOK != ''
+        env:
+          RENDER_RUNNER_DEPLOY_HOOK: ${{ secrets.RENDER_RUNNER_DEPLOY_HOOK }}
+        run: |
+          curl -fsS -X POST "${{ secrets.RENDER_RUNNER_DEPLOY_HOOK }}" || echo "Warning: Render Runner deploy hook trigger failed or not configured."
